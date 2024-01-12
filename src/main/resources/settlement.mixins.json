@@ -1,0 +1,15 @@
+{
+	"required": true,
+	"package": "com.settlement.mod.mixin",
+	"compatibilityLevel": "JAVA_17",
+	"mixins": [
+    "MinecraftServerMixin",
+    "ZombieEntityMixin",
+    "DrownedEntityMixin",
+    "BellBlockMixin",
+    "ServerWorldMixin"
+  ],
+	"injectors": {
+		"defaultRequire": 1
+	}
+}

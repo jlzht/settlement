@@ -1,0 +1,7 @@
+{
+  "parent": "item/generated",
+  "textures": {
+    "layer0": "settlement:item/emerald_bundle"
+  }
+}
+

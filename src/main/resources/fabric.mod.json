@@ -1,0 +1,34 @@
+{
+	"schemaVersion": 1,
+	"id": "settlement",
+	"version": "${version}",
+	"name": "Settlement Mod",
+	"description": "Completely reworks villagers",
+	"authors": [
+		"jlzht"
+	],
+	"contact": {
+		"homepage": "https://github.com/jlzht/settlement",
+		"sources": "https://github.com/jlzht/settlement"
+	},
+	"license": "CC0-1.0",
+	"icon": "assets/village/icon.png",
+	"environment": "*",
+	"entrypoints": {
+		"main": [{"adapter": "kotlin", "value": "com.settlement.mod.Settlement"}],
+		"client": [{"adapter": "kotlin", "value": "com.settlement.mod.SettlementClient"}]
+	},
+	"mixins": [
+		"settlement.mixins.json"
+	],
+	"depends": {
+		"fabricloader": ">=0.15.3",
+		"minecraft": "~1.20.4",
+		"java": ">=17",
+		"fabric-api": "*",
+		"fabric-language-kotlin": ">=1.9.22"
+	},
+	"suggests": {
+		"another-mod": "*"
+	}
+}
