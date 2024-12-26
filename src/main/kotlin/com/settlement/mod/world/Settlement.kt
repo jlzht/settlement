@@ -10,10 +10,14 @@ import com.settlement.mod.structure.Farm
 import com.settlement.mod.structure.Pond
 import com.settlement.mod.structure.Structure
 import com.settlement.mod.structure.StructureType
+import com.settlement.mod.structure.Pen
+import com.settlement.mod.structure.Campfire
 import net.minecraft.block.BarrelBlock
+import net.minecraft.block.FenceGateBlock
 import net.minecraft.block.Blocks
 import net.minecraft.block.DoorBlock
 import net.minecraft.block.FarmlandBlock
+import net.minecraft.block.CampfireBlock
 import net.minecraft.entity.player.PlayerEntity
 import net.minecraft.nbt.NbtCompound
 import net.minecraft.nbt.NbtElement
@@ -33,7 +37,6 @@ class Settlement(
     var structures = mutableMapOf<Int, Structure>()
     var settlers = mutableListOf<Int>()
     var allies = mutableMapOf<UUID, Int>()
-    private val errands = mutableListOf<Errand>()
     var level: Int = 1
 
     constructor(
@@ -78,7 +81,22 @@ class Settlement(
                 if (!this.isStructureInRegion(pos)) {
                     Building.createStructure(pos, player)
                 } else {
+                    // change to : THIS IS ALREADY A BUILDING (get type)
                     Response.ANOTHER_STRUCTURE_INSIDE.send(player).run { null }
+                }
+            }
+            is FenceGateBlock -> {
+                if (!this.isStructureInRange(pos, 32.0f)) {
+                    Pen.createStructure(pos, player)
+                } else {
+                    Response.ANOTHER_STRUCTURE_CLOSE.send(player).run { null }
+                }
+            }
+            is CampfireBlock -> {
+                if (!this.isStructureInRange(pos, 8.0f)) {
+                    Campfire.createStructure(pos, player)
+                } else {
+                    Response.ANOTHER_STRUCTURE_CLOSE.send(player).run { null }
                 }
             }
             else -> Response.INVALID_BLOCK.send(player).run { null }
@@ -98,7 +116,7 @@ class Settlement(
     fun getStructureByType(type: StructureType): Pair<Int, Structure>? =
         this.structures
             .filter {
-                it.value.type == type && it.value.isAvailable()
+                it.value.type == type
             }.entries
             .shuffled()
             .firstOrNull()
@@ -108,11 +126,9 @@ class Settlement(
         this.structures.remove(id)
     }
 
-    fun getErrands(vid: Int): List<Errand> = emptyList()
-
     fun addVillager(entity: AbstractVillagerEntity) {
         val key = Settlement.getAvailableKey(this.settlers.map { it })
-        entity.errandProvider.assignProvider(id, { v -> this.getErrands(v) }, false, key)
+        entity.errandProvider.assignSettlement(id, key)
         this.settlers.add(key)
     }
 
@@ -134,7 +150,7 @@ class Settlement(
 
     fun isStructureInRegion(pos: BlockPos): Boolean {
         for (structure in structures.values) {
-            if (structure.region.contains(pos)) {
+            if (structure.region.grow().contains(pos)) {
                 return true
             }
         }
@@ -156,7 +172,7 @@ class Settlement(
     fun getProfessionsBySettlementLevel(): List<ProfessionType> {
         val levelProfessionMap =
             mapOf(
-                1 to listOf(ProfessionType.GUARD, ProfessionType.FARMER, ProfessionType.FISHERMAN),
+                1 to listOf(ProfessionType.GUARD, ProfessionType.SHEPHERD, ProfessionType.FARMER, ProfessionType.FISHERMAN),
             )
         val professions = levelProfessionMap[level] ?: listOf(ProfessionType.GATHERER, ProfessionType.HUNTER)
         return professions

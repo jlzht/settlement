@@ -9,6 +9,7 @@ class ErrandProvider(
     private var workProvider: ((Int) -> List<Errand>?)? = null,
     private var freeProvider: ((Int) -> List<Errand>?)? = null,
 ) {
+    var alocKey: Int = 0
     var selfKey: Int = 0
     var homeKey: Int = 0
     var workKey: Int = 0
@@ -49,17 +50,17 @@ class ErrandProvider(
         return combinedErrands
     }
 
+    fun assignSettlement(id: Int, key: Int) {
+        alocKey = id
+        selfKey = key
+    }
+
     fun assignProvider(
         key: Int,
         provider: ((Int) -> List<Errand>?)?,
-        selector: Boolean,
-        ownKey: Int? = null,
+        selector: Boolean?,
     ) {
-        ownKey?.let {
-            freeProvider = provider
-            freeKey = key
-            selfKey = ownKey
-        } ?: run {
+        selector?.let {
             if (selector) {
                 homeProvider = provider
                 homeKey = key
@@ -67,6 +68,9 @@ class ErrandProvider(
                 workProvider = provider
                 workKey = key
             }
+        } ?: run {
+            freeProvider = provider
+            freeKey = key
         }
     }
 
@@ -93,10 +97,7 @@ class ErrandProvider(
 
     fun toNbt(): NbtCompound =
         NbtCompound().apply {
-            LOGGER.info("free: {}", freeKey)
-            LOGGER.info("self: {}", selfKey)
-            LOGGER.info("home: {}", homeKey)
-            LOGGER.info("work: {}", workKey)
+            putInt("AlocKey", alocKey)
             putInt("FreeKey", freeKey)
             putInt("SelfKey", selfKey)
             putInt("HomeKey", homeKey)
@@ -107,6 +108,7 @@ class ErrandProvider(
     companion object {
         fun fromNbt(nbt: NbtCompound): ErrandProvider =
             ErrandProvider().apply {
+                alocKey = nbt.getInt("AlocKey")
                 freeKey = nbt.getInt("FreeKey")
                 selfKey = nbt.getInt("SelfKey")
                 homeKey = nbt.getInt("HomeKey")

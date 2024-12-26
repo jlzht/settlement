@@ -1,6 +1,8 @@
 package com.settlement.mod.util
 
+import com.settlement.mod.LOGGER
 import com.settlement.mod.action.Action
+import net.minecraft.block.FenceGateBlock
 import com.settlement.mod.action.Errand
 import com.settlement.mod.entity.mob.AbstractVillagerEntity
 import net.minecraft.block.Blocks
@@ -45,16 +47,46 @@ object Finder {
         return null
     }
 
-    fun findDoorBlock(
+    fun findWanderBlock(
+        entity: AbstractVillagerEntity,
+        target: LivingEntity,
+    ): Errand? {
+        NoPenaltyTargeting.findFrom(entity, 4 + target.world.random.nextInt(8), 4, target.getPos())?.let { t ->
+            return Errand(Action.Type.WANDER, BlockPos(t.x.toInt(), t.y.toInt() + 1, t.z.toInt()))
+        }
+        return null
+    }
+
+    fun findSeekBlock(
+        entity: AbstractVillagerEntity,
+        target: LivingEntity,
+    ): Errand? {
+        NoPenaltyTargeting.findFrom(entity, 12, 4, target.getPos())?.let { t ->
+            return Errand(Action.Type.SEEK, BlockPos(t.x.toInt(), t.y.toInt() + 1, t.z.toInt()))
+        }
+        return null
+    }
+
+    fun findEntranceBlock(
         world: World,
         path: Path,
     ): Errand? {
         for (i in 0 until minOf(path.currentNodeIndex + 2, path.length)) {
             val pathNode = path.getNode(i)
-            val doorPos = BlockPos(pathNode.x, pathNode.y + 1, pathNode.z)
-            val doorValid = DoorBlock.canOpenByHand(world, doorPos)
-            if (!doorValid) continue
-            return Errand(Action.Type.OPEN, doorPos)
+            val entrancePos = BlockPos(pathNode.x, pathNode.y, pathNode.z)
+            val state = world.getBlockState(entrancePos)
+            LOGGER.info("{}", state)
+            //if (state.isAir) continue
+            when (state.getBlock()) {
+                is DoorBlock -> {
+                    if (DoorBlock.canOpenByHand(world, entrancePos)) return Errand(Action.Type.OPEN, entrancePos)
+                }
+                is FenceGateBlock -> {
+                    LOGGER.info("GOT HERE!")
+                    if (!state.get(FenceGateBlock.OPEN)) return Errand(Action.Type.OPEN, entrancePos)
+                }
+                else -> continue
+            }
         }
         return null
     }

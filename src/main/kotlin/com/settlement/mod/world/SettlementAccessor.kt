@@ -9,7 +9,7 @@ import com.settlement.mod.structure.StructureType
 object SettlementAccessor {
     fun visitSettlement(entity: AbstractVillagerEntity) {
         SettlementManager.findNearestSettlement(entity)?.let { settlement ->
-            entity.pushErrand(Action.Type.PICK, settlement.pos)
+            entity.pushErrand(Action.Type.REACH, settlement.pos)
         }
     }
 
@@ -19,15 +19,10 @@ object SettlementAccessor {
         }
     }
 
-    fun getSettlementToAttach(entity: AbstractVillagerEntity) {
-        SettlementManager.findSettlementById(entity.errandProvider.freeKey)?.let { settlement ->
-            entity.errandProvider.attachProvider({ key -> settlement.getErrands(key) }, null)
-        }
-    }
-
     fun leaveSettlement(entity: AbstractVillagerEntity) {
-        SettlementManager.findSettlementById(entity.errandProvider.freeKey)?.let { settlement ->
+        SettlementManager.findSettlementById(entity.errandProvider.alocKey)?.let { settlement ->
             val key = entity.errandProvider.selfKey
+            LOGGER.info("REMOVING:", key)
             settlement.removeVillager(key)
         }
     }
@@ -35,10 +30,12 @@ object SettlementAccessor {
     fun getStructureToAttach(
         entity: AbstractVillagerEntity,
         id: Int,
-        isHouse: Boolean,
+        selector: Boolean?,
     ) {
-        SettlementManager.findSettlementById(entity.errandProvider.freeKey)?.let { settlement ->
+        SettlementManager.findSettlementById(entity.errandProvider.alocKey)?.let { settlement ->
             settlement.getStructure(id)?.let { structure ->
+                LOGGER.info(structure.type.toString())
+                LOGGER.info(structure.getResidents().toString())
                 if (structure.getResidents().contains(entity.errandProvider.selfKey)) {
                     entity.errandProvider.attachProvider(
                         { key -> structure.getErrands(key) },
@@ -46,12 +43,14 @@ object SettlementAccessor {
                     )
                 }
             } ?: run {
-                if (isHouse) {
-                    LOGGER.info("got in house")
-                    entity.errandProvider.homeKey = 0
-                } else {
-                    LOGGER.info("got in work")
-                    entity.errandProvider.workKey = 0
+                selector?.let {
+                    if (selector) {
+                        entity.errandProvider.homeKey = 0
+                    } else {
+                        entity.errandProvider.workKey = 0
+                    }
+                } ?: run {
+                    entity.errandProvider.freeKey = 0
                 }
             }
         }
@@ -61,16 +60,19 @@ object SettlementAccessor {
         entity: AbstractVillagerEntity,
         type: StructureType,
     ) {
-        SettlementManager.findSettlementById(entity.errandProvider.freeKey)?.let { settlement ->
+        SettlementManager.findSettlementById(entity.errandProvider.alocKey)?.let { settlement ->
             // TODO: if not structure is available, force a delay of villager request
             settlement.getStructureByType(type)?.let { (id, structure) ->
-                structure.addResident(entity.errandProvider.selfKey)
-                entity.errandProvider.assignProvider(
-                    id,
-                    { i -> structure.getErrands(i) },
-                    structure.type == StructureType.HOUSE,
-                )
-                LOGGER.info("structure key: {} - my id: {}", id, entity.errandProvider.selfKey)
+                // put this somewhere else
+                if (structure.isAvailable()) {
+                    structure.addResident(entity.errandProvider.selfKey)
+                    val selector = if (structure.type == StructureType.HOUSE) true else if (structure.type == StructureType.CAMPFIRE) null else false
+                    entity.errandProvider.assignProvider(
+                        id,
+                        { i -> structure.getErrands(i) },
+                        selector
+                    )
+                }
             }
         }
     }
@@ -82,7 +84,6 @@ object SettlementAccessor {
             val profession = professions[entity.random.nextInt(professions.size)]
             entity.setProfession(profession)
         } ?: run {
-            // BAD LOGIC
             val base = listOf(ProfessionType.GATHERER, ProfessionType.HUNTER).shuffled()
             entity.setProfession(base[0])
         }

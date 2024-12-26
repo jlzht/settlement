@@ -11,4 +11,5 @@ enum class StructureType {
     KITCHEN,
     FORGERY,
     MARKET,
+    PEN,
 }

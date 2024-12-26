@@ -79,23 +79,14 @@ class SimpleFishingBobberEntity(
     private fun setFishHook(rod: SimpleFishingBobberEntity?) {
         this.getOwner()?.let { owner ->
             owner as AbstractVillagerEntity
-            if (rod == null) {
-                if (owner.getProfession() != null) {
-                    (owner.getProfession() as Fisherman).setFishHook(null)
-                }
-            } else {
-                if (owner.getProfession() != null) {
-                    (owner.getProfession() as Fisherman).setFishHook(rod)
-                }
-            }
+            if (owner.isProfessionInitialized() && owner.profession is Fisherman) (owner.profession as Fisherman).setFishHook(rod)
         }
     }
 
     fun setCaughtFish() {
-        this.getOwner()?.let {
-            (it as AbstractVillagerEntity).getProfession()?.let { p ->
-                (p as Fisherman).setCaughtFish()
-            }
+        this.getOwner()?.let { owner ->
+            owner as AbstractVillagerEntity
+            if (owner.isProfessionInitialized() && owner.profession is Fisherman) (owner.profession as Fisherman).setCaughtFish()
         }
         this.discard()
     }

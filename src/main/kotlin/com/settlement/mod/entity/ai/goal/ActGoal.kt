@@ -3,13 +3,14 @@ package com.settlement.mod.entity.ai.goal
 import com.settlement.mod.LOGGER
 import com.settlement.mod.action.Action
 import com.settlement.mod.action.Errand
-import com.settlement.mod.action.Position
 import com.settlement.mod.action.Parallel
+import com.settlement.mod.action.Position
 import com.settlement.mod.entity.mob.AbstractVillagerEntity
 import com.settlement.mod.util.Finder
 import net.minecraft.entity.ai.goal.Goal
 import net.minecraft.entity.ai.pathing.Path
 import net.minecraft.util.math.BlockPos
+import net.minecraft.block.LadderBlock
 import java.util.EnumSet
 
 class ActGoal(
@@ -17,15 +18,9 @@ class ActGoal(
 ) : Goal() {
     private val world = entity.world
 
-    val parallelMap =
-        mapOf(
-            Action.Type.FLEE to setOf(Pair(Action.Type.EAT, 7)),
-            Action.Type.LOOK to setOf(Pair(Action.Type.TALK, 6)),
-        )
-
     private var tickToTestCount = 0
     private var tickToExecCount = 0
-    private var ticksWithoutPath = 0
+    private var pathChanged = true
 
     private var path: Path? = null
     private var errand: Errand? = null
@@ -40,20 +35,16 @@ class ActGoal(
 
     override fun canStart(): Boolean {
         if (entity.errandManager.isEmpty()) return false
-        val peek = entity.errandManager.peek()
-        if (peek != null && errand != peek) {
-            resetErrand()
-            errand = peek
-            if (parallel == null) {
-                parallelMap[peek.cid]
-                    ?.firstOrNull { (pid, chance) ->
-                        entity.random.nextInt(chance) == 0 && (Action.get(pid) as Parallel).scan(entity) > peek.priority
-                    }?.let { (pid, _) ->
-                        parallel = Errand(pid)
-                    }
+        
+        entity.errandManager.peek()?.let { peek ->
+            if (errand != peek) {
+                resetErrand()
+                errand = peek
+                parallel = selectParallel(peek)
             }
         }
-        return peek != null
+
+        return true
     }
 
     override fun shouldContinue(): Boolean = false
@@ -61,72 +52,57 @@ class ActGoal(
     override fun shouldRunEveryTick() = true
 
     override fun tick() {
-        errand?.let { processPrimary(it, primaryState, { state -> setPrimaryState(state) }, { resetPrimaryState() }) }
-        parallel?.let { processParallel(it, parallelState, { state -> setParallelState(state) }, { resetParallelState() }) }
+        errand?.let { processErrand(it, primaryState) }
+        parallel?.let { processErrand(it, parallelState) }
     }
 
-    private fun processPrimary(
+    private fun processErrand(
         errand: Errand,
-        current: ErrandState,
-        setState: (ErrandState) -> Unit,
-        resetState: () -> Unit,
+        current: ErrandState
     ) {
-        val (cid, pos) = errand
-        val action = Action.get(cid) as Position
-        val distance = calculateDistanceAndPath(pos, action)
+        val action = Action.get(errand.cid)
+        when (action) {
+            is Position -> {
+                val distance = calculateDistanceAndPath(errand.cid, errand.pos, action)
 
-        if (action.shouldMove(distance)) {
-            tickMovement(cid, action)
-        } else {
-            tickToTestCount++
+                if (action.shouldMove(distance)) {
+                    tickMovement(action)
+                } else {
+                    tickToTestCount++
+                }
+            }
+            else -> { }
         }
-
         when (current) {
-            ErrandState.PENDING -> tickPending(action, errand, setState, resetState)
-            ErrandState.TESTED -> tickTested(action, errand, setState, resetState)
-            ErrandState.COMPLETED -> tickCompleted(action, errand, setState, resetState)
-        }
-    }
-
-    private fun processParallel(
-        errand: Errand,
-        current: ErrandState,
-        setState: (ErrandState) -> Unit,
-        resetState: () -> Unit,
-    ) {
-        val (cid, _) = errand
-        val action = Action.get(cid)
-
-        when (current) {
-            ErrandState.PENDING -> tickPending(action, errand, setState, resetState)
-            ErrandState.TESTED -> tickTested(action, errand, setState, resetState)
-            ErrandState.COMPLETED -> tickCompleted(action, errand, setState, resetState)
+            ErrandState.PENDING -> tickPending(action, errand)
+            ErrandState.TESTED -> tickTested(action, errand)
+            ErrandState.COMPLETED -> tickCompleted(action, errand)
         }
     }
 
     private fun tickPending(
         action: Action,
-        errand: Errand,
-        setState: (ErrandState) -> Unit,
-        resetState: () -> Unit,
+        errand: Errand
     ) {
         if (action.shouldTest(tickToTestCount)) {
-            if (action is Position) {
-                if (action.test(entity, errand.pos) >= 1) {
-                    LOGGER.info("> Test passed")
-                    setState(ErrandState.TESTED)
-                } else {
-                    LOGGER.info("> Test failed")
-                    resetState()
+            when (action) {
+                is Position -> {
+                    if (action.test(entity, errand.pos) >= 1) {
+                        LOGGER.info("> Test passed")
+                        setPrimaryState(ErrandState.TESTED)
+                    } else {
+                        LOGGER.info("> Test failed")
+                        resetPrimaryState()
+                    }
                 }
-            }
-            if (action is Parallel) {
-                if (action.test(entity) >= 1) {
-                    LOGGER.info("> Test passed")
-                    setState(ErrandState.TESTED)
-                } else {
-                    LOGGER.info("> Test failed")
-                    resetState()
+                is Parallel -> {
+                    if (action.test(entity) >= 1) {
+                        LOGGER.info("> Test passed")
+                        setParallelState(ErrandState.TESTED)
+                    } else {
+                        LOGGER.info("> Test failed")
+                        resetParallelState()
+                    }
                 }
             }
         }
@@ -134,20 +110,20 @@ class ActGoal(
 
     private fun tickTested(
         action: Action,
-        errand: Errand,
-        setState: (ErrandState) -> Unit,
-        resetState: () -> Unit,
+        errand: Errand
     ) {
         if (action.shouldExec(tickToExecCount)) {
             LOGGER.info("> Action executed")
-            if (action is Position) {
-                entity.energy -= action.energyCost
-                action.exec(entity, errand.pos)
-                setState(ErrandState.COMPLETED)
-            }
-            if (action is Parallel) {
-                action.exec(entity)
-                setState(ErrandState.COMPLETED)
+            when (action) {
+                is Position -> {
+                    entity.energy -= action.energyCost
+                    action.exec(entity, errand.pos)
+                    setPrimaryState(ErrandState.COMPLETED)
+                }
+                is Parallel -> {
+                    action.exec(entity)
+                    setParallelState(ErrandState.COMPLETED)
+                }
             }
         } else {
             tickToExecCount++
@@ -156,45 +132,42 @@ class ActGoal(
 
     private fun tickCompleted(
         action: Action,
-        errand: Errand,
-        setState: (ErrandState) -> Unit,
-        resetState: () -> Unit,
-    ) {
-        if (action is Position) {
-            when (action.eval(entity, errand.pos)) {
-                1.toByte() -> {
-                    LOGGER.info("> Errand concluded")
-                    resetState()
-                }
-                2.toByte() -> {
-                    resetState()
-                    action.redo(entity, errand.pos)
+        errand: Errand
+    ) { 
+        // add others codes to handle other numbers
+        when (action) {
+            is Position -> {
+                when (action.eval(entity, errand.pos)) {
+                    1.toByte() -> {
+                        LOGGER.info("> Errand concluded")
+                        resetPrimaryState()
+                    }
                 }
             }
-        }
-        if (action is Parallel) {
-            when (action.eval(entity)) {
-                1.toByte() -> {
-                    LOGGER.info("> Errand concluded")
-                    resetState()
-                }
-                2.toByte() -> {
-                    resetState()
-                    action.redo(entity)
+            is Parallel -> {
+                when (action.eval(entity)) {
+                    1.toByte() -> {
+                        LOGGER.info("> Errand concluded")
+                        resetParallelState()
+                    }
                 }
             }
         }
     }
 
     private fun calculateDistanceAndPath(
+        cid: Action.Type,
         pos: BlockPos?,
         action: Position,
     ): Double =
         entity.target?.let { target ->
-            val dist = entity.squaredDistanceTo(target)
-            if (action.shouldLook(dist)) entity.getLookControl().lookAt(target)
-            if (entity.isAlive && entity.isAttacking()) {
-                entity.navigation.findPathTo(target, 1)?.let { path = it }
+            if (cid in repelSet && target.isAlive) {
+                val dist = entity.squaredDistanceTo(target)
+                if (action.shouldLook(dist)) entity.getLookControl().lookAt(target)
+                if (!entity.navigation.isFollowingPath) {
+                    path = entity.navigation.findPathTo(target, 1)
+                    pathChanged = true
+                }
                 dist
             } else {
                 null
@@ -204,38 +177,41 @@ class ActGoal(
                 val center = point.toCenterPos()
                 val dist = entity.squaredDistanceTo(center)
                 if (action.shouldLook(dist)) entity.getLookControl().lookAt(center)
-                entity.navigation.findPathTo(center.x, center.y, center.z, 0)?.let { path = it }
+                if (!entity.navigation.isFollowingPath) {
+                    path = entity.navigation.findPathTo(center.x, center.y, center.z, 0)
+                    pathChanged = true
+                }
                 dist
             } ?: 0.0
         }
 
     private fun tickMovement(
-        cid: Action.Type,
         action: Position,
     ) {
         path?.let {
-            if (cid !in setOf(Action.Type.OPEN, Action.Type.CLOSE)) {
-                Finder.findDoorBlock(entity.world, it)?.let { (cid, pos) ->
+            // If door is in path, closes or open it
+            if (pathChanged && !entity.errandManager.has(Action.Type.OPEN) && !entity.errandManager.has(Action.Type.CLOSE)) {
+                Finder.findEntranceBlock(entity.world, path!!)?.let { (cid, pos, priority) ->
                     entity.pushErrand(cid, pos)
-                    return
                 }
             }
-            entity.getUp()
-            entity.navigation.startMovingAlong(path, 1.0)
-        } ?: entity.navigation.stop()
+            pathChanged = false
 
-        if (entity.navigation.isIdle) {
-            if (++ticksWithoutPath >= 50) {
-                entity.errandManager.pop()
+            if (entity.navigation.isIdle) {
+                entity.navigation.startMovingAlong(path, 1.0)
             }
-        } else {
-            entity.getNavigation().setSpeed(if (entity.isUsingItem) 0.5 else action.speedModifier)
-            ticksWithoutPath = 0
+        } ?: run {
+            LOGGER.info("<<<")
+            pathChanged = true
+            entity.navigation.stop()
         }
+
+        entity.getNavigation().setSpeed(if (entity.isUsingItem) 0.5 else action.speedModifier)
     }
 
     private fun setParallelState(state: ErrandState) {
         parallelState = state
+
     }
 
     private fun setPrimaryState(state: ErrandState) {
@@ -248,8 +224,11 @@ class ActGoal(
     }
 
     private fun resetPrimaryState() {
-        entity.errandManager.pop()
-        entity.navigation.stop()
+        entity.errandManager.pop()?.let { (cid, pos) ->
+            val action = Action.get(cid) as Position
+            action.stop(entity, pos)
+            entity.navigation.stop()
+        }
         resetErrand()
     }
 
@@ -261,9 +240,24 @@ class ActGoal(
         path = null
     }
 
+    private fun selectParallel(peek: Errand): Errand? {
+        return PARALLEL_MAP[peek.cid]?.firstOrNull { (pid, chance) ->
+            entity.random.nextInt(chance) == 0 && (Action.get(pid) as Parallel).scan(entity) > peek.priority
+        }?.let { (pid, _) -> Errand(pid) }
+    }
+
     private enum class ErrandState {
         PENDING,
         TESTED,
         COMPLETED,
+    }
+
+    companion object {
+        val PARALLEL_MAP =
+            mapOf(
+                Action.Type.FLEE to setOf(Pair(Action.Type.EAT, 7)),
+                Action.Type.TALK to setOf(Pair(Action.Type.DISAGREE, 8), Pair(Action.Type.AGREE, 8)),
+            )
+        val repelSet = setOf(Action.Type.ATTACK, Action.Type.AIM, Action.Type.CHARGE, Action.Type.DEFEND, Action.Type.LOOK, Action.Type.SHEAR)
     }
 }

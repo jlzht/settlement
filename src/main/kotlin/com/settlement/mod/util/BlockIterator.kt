@@ -120,6 +120,10 @@ object BlockIterator {
         state.isOf(Blocks.WATER) // add more blocks
     }
 
+    val PEN_AVAILABLE_SPACE: CellPredicate = { _, state, _ ->
+        state.isIn(BlockTags.FENCES) || state.isIn(BlockTags.FENCE_GATES) // add more blocks
+    }
+
     val FLOOD_FILL: (World, BlockPos, CellPredicate) -> Pair<Int, Iterable<BlockPos>>? = { world, spos, check ->
         val queue: Queue<BlockPos> = ArrayDeque()
         val visited = HashSet<BlockPos>()

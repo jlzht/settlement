@@ -108,6 +108,7 @@ sealed class Structure {
             when (structureType) {
                 StructureType.KITCHEN.ordinal -> Building(StructureType.KITCHEN, lower, upper)
                 StructureType.HOUSE.ordinal -> Building(StructureType.HOUSE, lower, upper)
+                StructureType.CAMPFIRE.ordinal -> Campfire(lower, upper)
                 StructureType.FARM.ordinal -> Farm(lower, upper)
                 StructureType.POND.ordinal -> Pond(lower, upper)
                 else -> null

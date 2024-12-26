@@ -12,6 +12,7 @@ import net.minecraft.item.ItemStack
 import net.minecraft.item.PickaxeItem
 import net.minecraft.item.RangedWeaponItem
 import net.minecraft.item.ShieldItem
+import net.minecraft.item.ShearsItem
 import net.minecraft.item.ShovelItem
 import net.minecraft.item.SwordItem
 import net.minecraft.registry.tag.ItemTags
@@ -28,9 +29,12 @@ object ItemPredicate {
     val ARMOR: (Item) -> Boolean = { item -> item is ArmorItem }
     val CROSSBOW: (Item) -> Boolean = { item -> item is CrossbowItem }
     val RANGED_WEAPON: (Item) -> Boolean = { item -> item is RangedWeaponItem }
+    val SHEARS: (Item) -> Boolean = { item -> item is ShearsItem }
     val PLANTABLE: (Item) -> Boolean = { item -> item.defaultStack.isIn(ItemTags.VILLAGER_PLANTABLE_SEEDS) }
+    val WOOLS: (Item) -> Boolean = { item -> item.defaultStack.isIn(ItemTags.WOOL) }
     val EDIBLE: (Item) -> Boolean = { item -> item.isFood() }
 
+    // use this instead of MobEntity use, I need to change this to handle items based on profession
     fun prefersNewEquipment(
         newStack: ItemStack,
         oldStack: ItemStack,

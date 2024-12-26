@@ -9,4 +9,5 @@ enum class ProfessionType {
     RECRUIT,
     MERCHANT,
     GUARD,
+    SHEPHERD,
 }

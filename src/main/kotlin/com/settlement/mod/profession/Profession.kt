@@ -1,12 +1,15 @@
 package com.settlement.mod.profession
 
+import com.settlement.mod.LOGGER
 import com.settlement.mod.action.Action
-import net.minecraft.util.Hand
-import com.settlement.mod.entity.projectile.SimpleFishingBobberEntity
 import com.settlement.mod.entity.mob.AbstractVillagerEntity
+import com.settlement.mod.entity.projectile.SimpleFishingBobberEntity
 import com.settlement.mod.item.ItemPredicate
 import com.settlement.mod.structure.StructureType
+import com.settlement.mod.util.Finder
 import net.minecraft.entity.ItemEntity
+import net.minecraft.entity.LivingEntity
+import net.minecraft.entity.passive.SheepEntity
 import net.minecraft.item.Item
 import net.minecraft.item.Items
 import net.minecraft.loot.LootTables
@@ -14,11 +17,46 @@ import net.minecraft.loot.context.LootContextParameterSet
 import net.minecraft.loot.context.LootContextParameters
 import net.minecraft.loot.context.LootContextTypes
 import net.minecraft.server.world.ServerWorld
+import net.minecraft.util.Hand
 
 abstract class Profession {
     abstract val type: ProfessionType
     open val desiredItems: List<(Item) -> Boolean> = listOf(ItemPredicate.EDIBLE)
     abstract val structureInterest: StructureType
+    open val COMFLICT_ERRAND_PROVIDER: (AbstractVillagerEntity, LivingEntity) -> Unit = { e, t ->
+        // TODO: create RETREAT and STRIFE actions
+        e.setAttacking(false)
+        if (!e.errandManager.has(Action.Type.FLEE)) {
+            Finder.findFleeBlock(e, t)?.let { (cid, pos) ->
+                e.pushErrand(cid, pos)
+            }
+        }
+    }
+
+    open val PEACEFUL_ERRAND_PROVIDER: (AbstractVillagerEntity, LivingEntity) -> Unit = { e, t ->
+        val options = listOf(
+            { Finder.findSeekBlock(e, t)?.let { (cid, pos) -> e.pushErrand(cid, pos) } },
+            { Finder.findWanderBlock(e, t)?.let { (cid, pos) -> e.pushErrand(cid, pos) } },
+            { e.pushErrand(Action.Type.LOOK) }
+        )
+
+        e.errandManager.peek()?.let { errand ->
+            if (errand.priority.toInt() <= 3 &&
+                !e.errandManager.has(Action.Type.SEEK) &&
+                !e.errandManager.has(Action.Type.WANDER) &&
+                !e.errandManager.has(Action.Type.LOOK)) {
+
+                options.random().invoke()
+            }
+
+        } ?: run {
+            if (!e.errandManager.has(Action.Type.SEEK) &&
+                !e.errandManager.has(Action.Type.WANDER) &&
+                !e.errandManager.has(Action.Type.LOOK)) {
+                options.random().invoke()
+            }
+        }
+    }
 
     companion object {
         fun get(
@@ -31,6 +69,7 @@ abstract class Profession {
                 ProfessionType.FARMER -> Farmer(entity)
                 ProfessionType.FISHERMAN -> Fisherman(entity)
                 ProfessionType.MERCHANT -> Merchant(entity)
+                ProfessionType.SHEPHERD -> Shepherd(entity)
                 ProfessionType.GUARD -> Guard(entity)
                 ProfessionType.RECRUIT -> Recruit(entity)
                 else -> Unemployed(entity)
@@ -139,6 +178,21 @@ class Recruit(
     override val structureInterest: StructureType = StructureType.POND // barraks
     override val type = ProfessionType.RECRUIT
 
+    override val COMFLICT_ERRAND_PROVIDER: (AbstractVillagerEntity, LivingEntity) -> Unit = { e, t ->
+        val canDamage =
+            if (entity.random.nextInt(3) == 0) { // Check if target is using item
+                cache[Action.Type.DEFEND]?.takeIf { it }?.let { entity.pushErrand(Action.Type.DEFEND) }
+                    ?: cache[Action.Type.ATTACK]?.takeIf { it }?.let { entity.pushErrand(Action.Type.ATTACK) }
+                    ?: false
+            } else {
+                cache[Action.Type.ATTACK]?.takeIf { it }?.let { entity.pushErrand(Action.Type.ATTACK) }
+                    ?: false
+            }
+        if (!canDamage) {
+            super.COMFLICT_ERRAND_PROVIDER(e, t)
+        }
+    }
+
     override fun updateCache() {
         cache = generateCache()
     }
@@ -146,11 +200,13 @@ class Recruit(
     override fun generateCache(): Map<Action.Type, Boolean> =
         mapOf(
             Action.Type.ATTACK to entity.inventory.hasItem(ItemPredicate.SWORD),
+            Action.Type.DEFEND to entity.inventory.hasItem(ItemPredicate.SHIELD),
         )
 
     override var cache: Map<Action.Type, Boolean> = emptyMap()
 }
 
+// TODO: add cache for each profession so no time is wasted looking items in static positions
 class Guard(
     val entity: AbstractVillagerEntity,
 ) : Profession(),
@@ -165,8 +221,38 @@ class Guard(
     override val structureInterest: StructureType = StructureType.POND // barraks
     override val type = ProfessionType.GUARD
 
+    override val COMFLICT_ERRAND_PROVIDER: (AbstractVillagerEntity, LivingEntity) -> Unit = { e, t ->
+        val distance = e.squaredDistanceTo(t)
+
+        val canDamage =
+            when {
+                distance >= 18 -> {
+                    listOf(
+                        Action.Type.CHARGE,
+                        Action.Type.AIM,
+                        Action.Type.ATTACK,
+                    ).any { action ->
+                        cache[action]?.takeIf { it }?.let { entity.pushErrand(action) } != null
+                    }
+                }
+                else -> {
+                    if (entity.random.nextInt(3) == 0) {
+                        cache[Action.Type.DEFEND]?.takeIf { it }?.let { entity.pushErrand(Action.Type.DEFEND) }
+                            ?: cache[Action.Type.ATTACK]?.takeIf { it }?.let { entity.pushErrand(Action.Type.ATTACK) }
+                    } else {
+                        cache[Action.Type.ATTACK]?.takeIf { it }?.let { entity.pushErrand(Action.Type.ATTACK) }
+                    } != null
+                }
+            }
+
+        if (!canDamage) {
+            super.COMFLICT_ERRAND_PROVIDER(e, t)
+        }
+    }
+
     override fun updateCache() {
         cache = generateCache()
+        LOGGER.info("{}", cache)
     }
 
     override fun generateCache(): Map<Action.Type, Boolean> =
@@ -178,4 +264,22 @@ class Guard(
         )
 
     override var cache: Map<Action.Type, Boolean> = emptyMap()
+}
+
+class Shepherd(
+    val entity: AbstractVillagerEntity,
+) : Profession() {
+    override val desiredItems: List<(Item) -> Boolean> =
+        super.desiredItems +
+            listOf(ItemPredicate.SHEARS, ItemPredicate.WOOLS)
+    override val structureInterest: StructureType = StructureType.PEN
+    override val type = ProfessionType.SHEPHERD
+
+    override val PEACEFUL_ERRAND_PROVIDER: (AbstractVillagerEntity, LivingEntity) -> Unit = { e, t ->
+        if (e.random.nextInt(10) == 0 && t is SheepEntity && !t.isSheared()) {
+            e.pushErrand(Action.Type.SHEAR)
+        } else {
+            super.PEACEFUL_ERRAND_PROVIDER(e, t)
+        }
+    }
 }

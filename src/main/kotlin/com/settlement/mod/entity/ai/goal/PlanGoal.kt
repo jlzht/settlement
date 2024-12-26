@@ -26,28 +26,30 @@ class PlanGoal(
     override fun start() {
         if (entity.world.isClient) return
         val provider = entity.errandProvider
-        if (provider.freeKey == 0) {
+        if (provider.alocKey == 0) {
             SettlementAccessor.visitSettlement(entity)
             SettlementAccessor.findSettlementToAttach(entity)
-            // how to test if villager is interested in settling down?
-        } else if (!provider.hasFreeProvider()) {
-            SettlementAccessor.getSettlementToAttach(entity)
         } else {
             if (provider.homeKey == 0) {
-                LOGGER.info("WILL LOOK FOR HOUSE")
                 SettlementAccessor.findStructureToAttach(entity, StructureType.HOUSE)
             } else if (!provider.hasHomeProvider()) {
-                LOGGER.info("WILL ATTACH TO HOME - {}", provider.homeKey)
                 SettlementAccessor.getStructureToAttach(entity, provider.homeKey, true)
             }
+
             if (provider.workKey == 0) {
-                entity.getProfession()?.let { profession ->
-                    SettlementAccessor.findStructureToAttach(entity, profession.structureInterest)
-                }
+                SettlementAccessor.findStructureToAttach(entity, entity.profession.structureInterest)
             } else if (!provider.hasWorkProvider()) {
-                LOGGER.info("WILL ATTACH TO WORK - {}", provider.workKey)
                 SettlementAccessor.getStructureToAttach(entity, provider.workKey, false)
             }
+            // I need to create a public settlement errand provider
+            // if (provider.freeKey == 0) {
+            //     LOGGER.info("WILL LOOK FOR AVAILABLE TASKS")
+            //     SettlementAccessor.findStructureToAttach(entity, StructureType.CAMPFIRE)
+            // } else if (!provider.hasFreeProvider()) {
+            //     LOGGER.info("WILL ATTACH TO FREE - {}", provider.workKey)
+            //     SettlementAccessor.getStructureToAttach(entity, provider.freeKey, null)
+            // }
+
             provider.pull().forEach { (cid, pos) ->
                 entity.pushErrand(cid, pos)
             }

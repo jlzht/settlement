@@ -2,6 +2,7 @@ package com.settlement.mod.entity.mob
 
 import com.settlement.mod.LOGGER
 import com.settlement.mod.action.Action
+import com.settlement.mod.action.ActionState
 import com.settlement.mod.action.Position
 import com.settlement.mod.entity.ai.goal.ActGoal
 import com.settlement.mod.entity.ai.goal.PercieveGoal
@@ -54,17 +55,14 @@ import net.minecraft.world.LocalDifficulty
 import net.minecraft.world.ServerWorldAccess
 import net.minecraft.world.World
 
-// TODO:
-// - rename AbstractVillagerEntity to AbstractVillagerEntity
-// - make it suitable for preferred hand selection
 class AbstractVillagerEntity(
     entityType: EntityType<out AbstractVillagerEntity>,
     world: World?,
 ) : PathAwareEntity(entityType, world),
     ExtendedScreenHandlerFactory {
     val inventory: VillagerInventory = VillagerInventory()
-    private lateinit var profession: Profession // do not use lateinit
-    lateinit var errandProvider: ErrandProvider
+    lateinit var profession: Profession
+    lateinit var errandProvider: ErrandProvider // put Provider inside manager
     lateinit var errandManager: ErrandManager
 
     init {
@@ -73,8 +71,20 @@ class AbstractVillagerEntity(
     }
 
     override fun initDataTracker() {
-        this.dataTracker.startTracking(SWINGING, false)
+        this.dataTracker.startTracking(STATE, 0)
         super.initDataTracker()
+    }
+
+    fun isProfessionInitialized(): Boolean {
+        return ::profession.isInitialized
+    }
+
+    fun isErrandManagerInitialized(): Boolean {
+        return ::errandManager.isInitialized
+    }
+    
+    fun isErrandProviderInitialized(): Boolean {
+        return ::errandProvider.isInitialized
     }
 
     override fun initialize(
@@ -84,15 +94,11 @@ class AbstractVillagerEntity(
         entityData: EntityData?,
         entityNbt: NbtCompound?,
     ): EntityData? {
-        if (spawnReason == SpawnReason.COMMAND ||
-            spawnReason == SpawnReason.SPAWN_EGG ||
-            SpawnReason.isAnySpawner(spawnReason) ||
-            spawnReason == SpawnReason.DISPENSER
-        ) {
-        }
+
         SettlementAccessor.setProfession(this)
         errandManager = ErrandManager()
         errandProvider = ErrandProvider()
+
         return super.initialize(world, difficulty, spawnReason, entityData, entityNbt)
     }
 
@@ -119,6 +125,8 @@ class AbstractVillagerEntity(
     override fun sleep(pos: BlockPos) {
         super.sleep(pos)
     }
+    
+    fun canSleep(): Boolean = this.world.getTimeOfDay() % 24000.0f / 1000 > 12
 
     private var fighting: Boolean = false
 
@@ -143,7 +151,15 @@ class AbstractVillagerEntity(
     }
 
     fun getUp() {
-        this.setPose(EntityPose.STANDING)
+        if (this.pose == EntityPose.STANDING) return
+
+        if (this.isSleeping()) {
+            this.wakeUp()
+        }
+
+        if (this.isSitting()) {
+            this.setPose(EntityPose.STANDING)
+        }
     }
 
     fun isEating(): Boolean {
@@ -243,19 +259,9 @@ class AbstractVillagerEntity(
         }
     }
 
-    fun getProfession(): Profession? =
-        if (::profession.isInitialized) {
-            this.profession
-        } else {
-            null
-        }
-
     fun setProfession(type: ProfessionType) {
-        LOGGER.info("SETTING PROFESSION: {}", type.name)
         this.profession = Profession.get(this, type)
     }
-
-    fun getStructureOfInterest() = this.profession.structureInterest
 
     override fun writeScreenOpeningData(
         player: ServerPlayerEntity,
@@ -279,7 +285,6 @@ class AbstractVillagerEntity(
             // if (!world.isClient) {
             //    if (this.profession.type == ProfessionType.MERCHANT) {
             //        val optionalInt = player.openHandledScreen(this)
-            //        // TODO: If recieved optionalInt int do calculations for trading
             //    }
             // }
             return ActionResult.success(this.getWorld().isClient)
@@ -292,7 +297,7 @@ class AbstractVillagerEntity(
     var hunger: Double = 20.0
     var ticksToDecreaseHunger = 0
     var foodTickTimer = 0
-
+    // TOOD: make a NeedsManager class
     override fun tick() {
         isOnWater = this.isSwimming()
         super.tick()
@@ -334,6 +339,31 @@ class AbstractVillagerEntity(
         super.remove(reason)
     }
 
+    fun setState(state: ActionState) {
+        this.dataTracker.set(STATE, state.ordinal)
+    }
+
+    fun getState(): Int = this.dataTracker.get(STATE)
+
+    fun handleState(): ActionState =
+        when (getState()) {
+            ActionState.DISAGREE.ordinal -> ActionState.DISAGREE
+            ActionState.AGREE.ordinal -> ActionState.AGREE
+            ActionState.TALK.ordinal -> ActionState.TALK
+            ActionState.OFFER.ordinal -> ActionState.OFFER
+            ActionState.SWEAT.ordinal -> ActionState.SWEAT
+            else -> throw IllegalArgumentException("Unknown animation state: ${getState()}")
+        }
+
+    override fun onDeath(damageSource: DamageSource) {
+        LOGGER.info("Villager {} died, message: {}", this as Any, damageSource.getDeathMessage(this).string)
+        this.dropInventory()
+        if (!this.getWorld().isClient) {
+            SettlementAccessor.leaveSettlement(this)
+        }
+        super.onDeath(damageSource)
+    }
+
     override fun canPickUpLoot(): Boolean = true
 
     override fun canEquip(stack: ItemStack): Boolean = true
@@ -369,26 +399,6 @@ class AbstractVillagerEntity(
             )
         }
     }
-
-    private var isSwinging = false
-
-    fun setSwinging(swinging: Boolean) {
-        isSwinging = swinging
-        this.dataTracker.set(SWINGING, swinging)
-    }
-
-    fun isSwinging(): Boolean = this.dataTracker.get(SWINGING)
-
-    override fun onDeath(damageSource: DamageSource) {
-        LOGGER.info("Villager {} died, message: {}", this as Any, damageSource.getDeathMessage(this).string)
-        this.dropInventory()
-        if (!this.getWorld().isClient && this.errandProvider.hasFreeProvider()) {
-            SettlementAccessor.leaveSettlement(this)
-        }
-        super.onDeath(damageSource)
-    }
-
-    fun canSleep(): Boolean = this.world.getTimeOfDay() % 24000.0f / 1000 > 12
 
     fun pickUpItem(item: ItemEntity) {
         val itemStack = item.stack
@@ -463,16 +473,16 @@ class AbstractVillagerEntity(
         this.inventory.clear()
     }
 
-    // TODO: use better nbt string name convetion
     override fun readCustomDataFromNbt(nbt: NbtCompound) {
         super.readCustomDataFromNbt(nbt)
+        
         if (nbt.contains(INVENTORY_KEY, NbtElement.LIST_TYPE.toInt())) {
             this.inventory.readNbt(nbt.getList(INVENTORY_KEY, NbtElement.COMPOUND_TYPE.toInt()))
         }
-        // add check for first spawn
-        this.setProfession(ProfessionType.values()[nbt.getInt(VILLAGER_PROFESSION)])
-        if (!this::errandManager.isInitialized) this.errandManager = ErrandManager.fromNbt(nbt.getCompound(ERRAND_MANAGER))
-        if (!this::errandProvider.isInitialized) this.errandProvider = ErrandProvider.fromNbt(nbt.getCompound(ERRAND_PROVIDER))
+
+        if (!isProfessionInitialized()) this.setProfession(ProfessionType.values()[nbt.getInt(VILLAGER_PROFESSION)])
+        if (!isErrandManagerInitialized()) this.errandManager = ErrandManager.fromNbt(nbt.getCompound(ERRAND_MANAGER))
+        if (!isErrandProviderInitialized()) this.errandProvider = ErrandProvider.fromNbt(nbt.getCompound(ERRAND_PROVIDER))
     }
 
     override fun writeCustomDataToNbt(nbt: NbtCompound) {
@@ -493,10 +503,10 @@ class AbstractVillagerEntity(
         val STANDING_DIMENSIONS: EntityDimensions = EntityDimensions.fixed(0.6f, 1.95f)
 
         // Generalize this in a enum that tracks states
-        val SWINGING: TrackedData<Boolean> =
+        val STATE: TrackedData<Int> =
             DataTracker.registerData(
                 AbstractVillagerEntity::class.java,
-                TrackedDataHandlerRegistry.BOOLEAN,
+                TrackedDataHandlerRegistry.INTEGER,
             )
 
         fun createCustomVillagerAttributes(): DefaultAttributeContainer.Builder =

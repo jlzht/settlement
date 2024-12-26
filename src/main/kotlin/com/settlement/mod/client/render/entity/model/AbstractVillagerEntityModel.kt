@@ -1,6 +1,6 @@
 package com.settlement.mod.client.render.entity.model
 
-import com.settlement.mod.LOGGER
+import com.settlement.mod.action.ActionState
 import com.settlement.mod.entity.mob.AbstractVillagerEntity
 import net.fabricmc.api.EnvType
 import net.fabricmc.api.Environment
@@ -147,20 +147,31 @@ class AbstractVillagerEntityModel(
         } else {
             sitOffset = false
         }
+
         if (entity.isSwimming()) {
             this.lerpAngle(this.leaningPitch, this.head.pitch, -0.7853982f / 4)
-            this.lerpAngle(this.leaningPitch, this.rightArm.roll, -0.7853982f / 4)
+            // this.lerpAngle(this.leaningPitch, this.rightArm.roll, -0.7853982f / 4)
         } else {
             this.lerpAngle(this.leaningPitch, this.head.pitch, j * ((Math.PI.toFloat()) / 180))
         }
 
         this.head.yaw = i * (Math.PI / 180).toFloat()
         this.head.pitch = j * (Math.PI / 180).toFloat()
-        if (entity.isSwinging()) {
-            this.head.roll = 0.3f * MathHelper.sin(0.45f * h)
-            this.head.pitch = 0.4f
-        } else {
-            this.head.roll = 0.0f
+        when (entity.getState()) {
+            ActionState.DISAGREE.ordinal -> {
+                this.head.roll = 0.3f * MathHelper.sin(0.45f * h)
+                this.head.pitch = 0.4f
+            }
+            ActionState.AGREE.ordinal -> {
+                this.head.pitch = 0.3f * MathHelper.sin(0.25f * h)
+            }
+            ActionState.TALK.ordinal -> {
+            }
+            ActionState.OFFER.ordinal -> { }
+            ActionState.SWEAT.ordinal -> { }
+            else -> {
+                this.head.roll = 0.0f
+            }
         }
     }
 

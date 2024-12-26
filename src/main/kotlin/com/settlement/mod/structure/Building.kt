@@ -95,7 +95,7 @@ class Building(
         this.updateCapacity()
     }
 
-    fun extractErrandsByIndex(index: Int): List<Errand>? {
+    private fun extractErrandsByIndex(index: Int): List<Errand>? {
         val indicesOfOnes =
             errands
                 .withIndex()

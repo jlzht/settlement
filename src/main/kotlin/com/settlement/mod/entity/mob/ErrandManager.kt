@@ -5,16 +5,13 @@ import com.settlement.mod.action.Action
 import com.settlement.mod.action.Errand
 import net.minecraft.nbt.NbtCompound
 import net.minecraft.util.math.BlockPos
+import net.minecraft.nbt.NbtElement
+import net.minecraft.nbt.NbtList
 import java.util.PriorityQueue
 
 // TODO: add errand serialization
 class ErrandManager {
-    private val comparator =
-        Comparator<Errand> { e1, e2 ->
-            e1.priority.compareTo(e2.priority)
-        }
-
-    private val queue = PriorityQueue(comparator)
+    private val queue = PriorityQueue<Errand>()
 
     fun peek(): Errand? = queue.peek()
 
@@ -23,9 +20,7 @@ class ErrandManager {
     fun isEmpty(): Boolean = queue.isEmpty()
 
     fun pop(): Errand? {
-        val e = queue.poll()
-        e?.let { LOGGER.info("Popped errand: {}", e) }
-        return e
+        return queue.poll()
     }
 
     fun push(
@@ -35,8 +30,7 @@ class ErrandManager {
     ): Boolean {
         if (priority > 0) {
             val errand = Errand(action, pos, priority)
-            LOGGER.info("Added errand: {}", errand)
-            queue.add(errand)
+            queue.offer(errand)
             return true
         }
         return false
@@ -48,9 +42,27 @@ class ErrandManager {
 
     fun toNbt(): NbtCompound =
         NbtCompound().apply {
+            val nbtList = NbtList()
+            for (element in queue) {
+                val data = element.toNbt()
+                nbtList.add(data)
+            }
+            put("ErrandList", nbtList) 
         }
 
     companion object {
-        fun fromNbt(nbt: NbtCompound): ErrandManager = ErrandManager()
+        fun fromNbt(nbt: NbtCompound): ErrandManager {
+            val errandManager = ErrandManager()
+            nbt.getList("ErrandList", NbtElement.COMPOUND_TYPE.toInt()).let { nbtList ->
+                for (i in 0 until nbtList.size) {
+                    val nbtCompound = nbtList.getCompound(i)
+                    Errand.fromNbt(nbtCompound).let { (action, pos, priority) ->
+                      errandManager.push(action, pos, priority)
+                    }
+                }
+            }
+
+            return errandManager
+        }
     }
 }
