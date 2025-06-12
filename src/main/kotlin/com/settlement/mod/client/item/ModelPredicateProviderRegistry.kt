@@ -1,6 +1,6 @@
 package com.village.mod.client.item
 
-import net.minecraft.client.item.ModelPredicateProviderRegistry
+// import net.minecraft.client.item.ModelPredicateProviderRegistry
 import net.minecraft.item.Items
 import net.minecraft.util.Identifier
 

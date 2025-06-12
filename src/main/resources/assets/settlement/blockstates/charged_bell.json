@@ -1,0 +1,5 @@
+{
+  "variants": {
+    "": { "model": "settlement:block/charged_bell" }
+  }
+}

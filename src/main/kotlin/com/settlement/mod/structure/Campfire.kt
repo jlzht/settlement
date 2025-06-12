@@ -2,10 +2,10 @@ package com.settlement.mod.structure
 
 import com.settlement.mod.action.Action
 import com.settlement.mod.action.Errand
+import com.settlement.mod.screen.Response
 import com.settlement.mod.util.BlockIterator
 import com.settlement.mod.util.Region
 import net.minecraft.block.BlockState
-import net.minecraft.block.ChestBlock
 import net.minecraft.block.SlabBlock
 import net.minecraft.entity.player.PlayerEntity
 import net.minecraft.util.math.BlockPos
@@ -13,18 +13,12 @@ import net.minecraft.world.World
 
 // TODO: give a purpose to this structure
 class Campfire(
-    val lower: BlockPos,
-    val upper: BlockPos,
+    override val region: Region,
 ) : Structure() {
     override val maxCapacity: Int = 4
-    override val volumePerResident: Int = 8
+    override val volumePerResident: Int = 4
     override var type: StructureType = StructureType.CAMPFIRE
-    override var region: Region = Region(lower, upper)
     override val residents: MutableList<Int> = MutableList(maxCapacity) { -1 }
-    override var capacity: Int
-        get() = getResidents().size
-        set(value) {
-        }
 
     override fun getErrands(vid: Int): List<Errand>? {
         if (!hasErrands()) return null
@@ -40,18 +34,12 @@ class Campfire(
                 errands.add(Errand(action, pos))
             }
         }
-        updatedCapacity = errands.count()
-        this.updateCapacity()
+        this.updateCapacity(errands.count())
     }
 
     private fun getAction(state: BlockState): Action.Type? =
         when (state.block) {
-            is SlabBlock -> {
-                Action.Type.SIT
-            }
-            is ChestBlock -> {
-                Action.Type.STORE
-            }
+            is SlabBlock -> Action.Type.SIT
             else -> null
         }
 
@@ -61,7 +49,10 @@ class Campfire(
             player: PlayerEntity,
         ): Structure? {
             val world = player.world
-            val campfire = Campfire(pos.south(3).west(3).down(), pos.north(3).east(3).up())
+            // TODO: think of fail cases
+            val region = Region(pos.add(-2, 0, -2), pos.add(2, 2, 2))
+            val campfire = Campfire(region)
+            Response.NEW_STRUCTURE.send(player, campfire.type.name)
             return campfire
         }
     }

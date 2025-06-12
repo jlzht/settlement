@@ -8,18 +8,12 @@ import net.minecraft.world.World
 
 // TODO: give a purpose to this structure
 class Hall(
-    val lower: BlockPos,
-    val upper: BlockPos,
+    override val region: Region
 ) : Structure() {
     override val maxCapacity: Int = 4
     override val volumePerResident: Int = 32
     override var type: StructureType = StructureType.HALL
-    override var region: Region = Region(lower, upper)
     override val residents: MutableList<Int> = MutableList(maxCapacity) { -1 }
-    override var capacity: Int
-        get() = getResidents().size
-        set(value) {
-        }
 
     override fun getErrands(vid: Int): List<Errand>? = null
 
@@ -31,7 +25,8 @@ class Hall(
             player: PlayerEntity,
         ): Structure? {
             val world = player.world
-            val hall = Hall(pos, pos)
+            val region = Region(pos, pos)
+            val hall = Hall(region)
             return hall
         }
     }

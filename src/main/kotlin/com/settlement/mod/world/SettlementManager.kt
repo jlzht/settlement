@@ -1,15 +1,17 @@
 package com.settlement.mod.world
 
+import com.mojang.serialization.Codec
+import com.mojang.serialization.codecs.RecordCodecBuilder
 import com.settlement.mod.screen.Response
+import com.settlement.mod.MODID
+import net.minecraft.datafixer.DataFixTypes
 import net.minecraft.entity.LivingEntity
 import net.minecraft.entity.player.PlayerEntity
-import net.minecraft.nbt.NbtCompound
-import net.minecraft.nbt.NbtElement
-import net.minecraft.nbt.NbtList
 import net.minecraft.registry.entry.RegistryEntry
 import net.minecraft.server.world.ServerWorld
 import net.minecraft.util.math.BlockPos
 import net.minecraft.world.PersistentState
+import net.minecraft.world.PersistentStateType
 import net.minecraft.world.dimension.DimensionType
 import net.minecraft.world.dimension.DimensionTypes
 
@@ -46,7 +48,7 @@ class SettlementManager : PersistentState() {
 
             Settlement(id, name, pos, dim).let {
                 settlements.add(it)
-                it.allies[player.getUuid()] = 50
+                // it.allies[player.getUuid()] = 50
                 Response.NEW_SETTLEMENT.send(player, name)
                 return it
             }
@@ -65,21 +67,6 @@ class SettlementManager : PersistentState() {
         settlements.clear()
     }
 
-    override fun writeNbt(nbt: NbtCompound): NbtCompound {
-        nbt.put("Settlements", settlementSerialize())
-        return nbt
-    }
-
-    fun settlementSerialize(): NbtList {
-        val nbtList = NbtList()
-        for (settlement in settlements) {
-            nbtList.add(settlement.toNbt())
-        }
-        return nbtList
-    }
-
-    var ticksToUpdate: Int = 300
-
     // TODO: find strategies for skiping settlement ticking
     fun tick() {
         settlements.forEach { settlement ->
@@ -97,20 +84,24 @@ class SettlementManager : PersistentState() {
     }
 
     companion object {
-        fun createFromNbt(tag: NbtCompound): SettlementManager {
-            val state = SettlementManager()
-            val settlement = tag.getList("Settlements", NbtElement.COMPOUND_TYPE.toInt())
-            for (i in 0 until settlement.size) {
-                val data = settlement.getCompound(i)
-                val set = Settlement.fromNbt(data)
-                state.settlements.add(set)
+        val CODEC: Codec<SettlementManager> =
+            RecordCodecBuilder.create { instance ->
+                instance
+                    .group(
+                        Codec
+                            .list(Settlement.CODEC)
+                            .fieldOf("settlements")
+                            .forGetter { it.getSettlements() },
+                    ).apply(instance) { settlements ->
+                        SettlementManager().apply {
+                            this.getSettlements().addAll(settlements)
+                        }
+                    }
             }
-            return state
-        }
 
         @JvmStatic
-        fun getPersistentStateType(): Type<SettlementManager> =
-            Type({ SettlementManager() }, { nbt -> SettlementManager.createFromNbt(nbt) }, null)
+        fun getPersistentStateType(): PersistentStateType<SettlementManager> =
+            PersistentStateType("settlement_manager", ::SettlementManager, CODEC, null)
 
         private lateinit var instance: SettlementManager
 

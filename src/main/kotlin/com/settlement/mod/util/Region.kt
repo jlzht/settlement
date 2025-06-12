@@ -1,23 +1,26 @@
 package com.settlement.mod.util
 
+import com.mojang.serialization.Codec
+import com.mojang.serialization.codecs.RecordCodecBuilder
 import net.minecraft.util.math.BlockPos
 
 data class Region(
     var lower: BlockPos,
     var upper: BlockPos,
 ) {
+
     fun append(block: BlockPos) {
         lower =
             BlockPos(
-                if (block.x < lower.x) block.x else lower.x,
-                if (block.y < lower.y) block.y else lower.y,
-                if (block.z < lower.z) block.z else lower.z,
+                minOf(block.x, lower.x),
+                minOf(block.y, lower.y),
+                minOf(block.z, lower.z),
             )
         upper =
             BlockPos(
-                if (block.x > upper.x) block.x else upper.x,
-                if (block.y > upper.y) block.y else upper.y,
-                if (block.z > upper.z) block.z else upper.z,
+                maxOf(block.x, upper.x),
+                maxOf(block.y, upper.y),
+                maxOf(block.z, upper.z),
             )
     }
 
@@ -49,4 +52,15 @@ data class Region(
             point.y <= upper.y &&
             point.z >= lower.z &&
             point.z <= upper.z
+
+    companion object {
+        val CODEC: Codec<Region> =
+            RecordCodecBuilder.create { instance ->
+                instance
+                    .group(
+                        BlockPos.CODEC.fieldOf("lower").forGetter { it.lower },
+                        BlockPos.CODEC.fieldOf("upper").forGetter { it.upper },
+                    ).apply(instance, ::Region)
+            }
+    }
 }

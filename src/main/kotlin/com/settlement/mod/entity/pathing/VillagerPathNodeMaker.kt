@@ -7,6 +7,7 @@ import net.minecraft.block.FenceGateBlock
 import net.minecraft.block.LeavesBlock
 import net.minecraft.entity.ai.pathing.LandPathNodeMaker
 import net.minecraft.entity.ai.pathing.NavigationType
+import net.minecraft.entity.ai.pathing.PathContext
 import net.minecraft.entity.ai.pathing.PathNodeType
 import net.minecraft.registry.tag.BlockTags
 import net.minecraft.registry.tag.FluidTags
@@ -15,20 +16,21 @@ import net.minecraft.world.BlockView
 
 class VillagerPathNodeMaker : LandPathNodeMaker() {
     override fun getDefaultNodeType(
-        world: BlockView,
+        context: PathContext,
         x: Int,
         y: Int,
         z: Int,
-    ): PathNodeType = VillagerPathNodeMaker.getLandNodeType(world, BlockPos.Mutable(x, y, z))
+    ): PathNodeType = VillagerPathNodeMaker.getLandNodeType(context, BlockPos.Mutable(x, y, z))
 
     companion object {
         fun getLandNodeType(
-            world: BlockView,
+            context: PathContext,
             pos: BlockPos.Mutable,
         ): PathNodeType {
             val i = pos.x
             val j = pos.y
             val k = pos.z
+            val world = context.getWorld()
             var pathNodeType = VillagerPathNodeMaker.getCommonNodeType(world, pos)
 
             if (pathNodeType != PathNodeType.OPEN || j < world.bottomY + 1) {
@@ -44,18 +46,19 @@ class VillagerPathNodeMaker : LandPathNodeMaker() {
                 PathNodeType.POWDER_SNOW -> PathNodeType.DANGER_POWDER_SNOW
                 PathNodeType.DAMAGE_CAUTIOUS -> PathNodeType.DAMAGE_CAUTIOUS
                 PathNodeType.TRAPDOOR -> PathNodeType.DANGER_TRAPDOOR
-                else -> VillagerPathNodeMaker.getNodeTypeFromNeighbors(world, pos.set(i, j, k), PathNodeType.WALKABLE)
+                else -> VillagerPathNodeMaker.getNodeTypeFromNeighbors(context, pos.set(i, j, k), PathNodeType.WALKABLE)
             }
         }
 
         fun getNodeTypeFromNeighbors(
-            world: BlockView,
+            context: PathContext,
             pos: BlockPos.Mutable,
             nodeType: PathNodeType,
         ): PathNodeType {
             val i = pos.x
             val j = pos.y
             val k = pos.z
+            val world = context.getWorld()
 
             for (l in -1..1) {
                 for (m in -1..1) {
@@ -67,7 +70,7 @@ class VillagerPathNodeMaker : LandPathNodeMaker() {
                         if (blockState.isOf(Blocks.CACTUS) || blockState.isOf(Blocks.SWEET_BERRY_BUSH)) {
                             return PathNodeType.DANGER_OTHER
                         }
-                        if (LandPathNodeMaker.inflictsFireDamage(blockState)) {
+                        if (LandPathNodeMaker.isFireDamaging(blockState)) {
                             return PathNodeType.DANGER_FIRE
                         }
                         if (world.getFluidState(pos).isIn(FluidTags.WATER)) {
@@ -114,7 +117,7 @@ class VillagerPathNodeMaker : LandPathNodeMaker() {
             if (fluidState.isIn(FluidTags.LAVA)) {
                 return PathNodeType.LAVA
             }
-            if (LandPathNodeMaker.inflictsFireDamage(blockState)) {
+            if (LandPathNodeMaker.isFireDamaging(blockState)) {
                 return PathNodeType.DAMAGE_FIRE
             }
             if (block is DoorBlock) {
@@ -142,7 +145,7 @@ class VillagerPathNodeMaker : LandPathNodeMaker() {
                 return PathNodeType.FENCE
             }
 
-            if (!blockState.canPathfindThrough(world, pos, NavigationType.LAND)) {
+            if (!blockState.canPathfindThrough(NavigationType.LAND)) {
                 return PathNodeType.BLOCKED
             }
             if (fluidState.isIn(FluidTags.WATER)) {

@@ -59,24 +59,36 @@ object BlockIterator {
     }
 
     val CUBOID: (BlockPos, BlockPos) -> Iterable<BlockPos> = { lower, upper ->
+        val minX = minOf(lower.x, upper.x)
+        val minY = minOf(lower.y, upper.y)
+        val minZ = minOf(lower.z, upper.z)
+        val maxX = maxOf(lower.x, upper.x)
+        val maxY = maxOf(lower.y, upper.y)
+        val maxZ = maxOf(lower.z, upper.z)
+
         Iterable {
             object : AbstractIterator<BlockPos>() {
-                private var x = lower.x - 1
-                private var z = lower.z - 1
+                private var x = minX
+                private var y = minY
+                private var z = minZ
 
                 override fun computeNext() {
-                    if (z > upper.z + 1 || x > upper.x + 1) {
+                    if (y > maxY) {
                         done()
                         return
                     }
 
-                    val point = BlockPos(x, lower.y, z)
-                    setNext(point)
+                    val pos = BlockPos(x, y, z)
+                    setNext(pos)
 
                     x++
-                    if (x > upper.x) {
-                        x = lower.x
+                    if (x > maxX) {
+                        x = minX
                         z++
+                        if (z > maxZ) {
+                            z = minZ
+                            y++
+                        }
                     }
                 }
             }
@@ -102,7 +114,8 @@ object BlockIterator {
             }
         }
     }
-    val TILLABLE_BLOCKS = setOf(Blocks.DIRT_PATH, Blocks.DIRT, Blocks.COARSE_DIRT, Blocks.ROOTED_DIRT)
+
+    val TILLABLE_BLOCKS = setOf(Blocks.DIRT_PATH, Blocks.DIRT, Blocks.COARSE_DIRT, Blocks.ROOTED_DIRT, Blocks.GRASS_BLOCK)
 
     val BUILDING_AVAILABLE_SPACE: CellPredicate = { pos, state, cached ->
         (
@@ -120,29 +133,45 @@ object BlockIterator {
         state.isOf(Blocks.WATER) // add more blocks
     }
 
-    val PEN_AVAILABLE_SPACE: CellPredicate = { _, state, _ ->
-        state.isIn(BlockTags.FENCES) || state.isIn(BlockTags.FENCE_GATES) // add more blocks
+    val TREE_AVAILABLE_SPACE: CellPredicate = { _, state, _ ->
+        state.isIn(BlockTags.LOGS_THAT_BURN)
     }
 
-    val FLOOD_FILL: (World, BlockPos, CellPredicate) -> Pair<Int, Iterable<BlockPos>>? = { world, spos, check ->
-        val queue: Queue<BlockPos> = ArrayDeque()
-        val visited = HashSet<BlockPos>()
-        var iterations = 0
-        var edgesCount = 0
-        var totalCount = 0
-        queue.add(spos)
-        val edges = mutableListOf<BlockPos>()
-        while (queue.isNotEmpty()) {
-            val current = queue.poll()
-            if (!visited.contains(current)) {
+    val PEN_AVAILABLE_SPACE: CellPredicate = { _, state, _ ->
+        state.isIn(BlockTags.FENCES) || state.isIn(BlockTags.FENCE_GATES)
+    }
+    
+    val TUNNEL_AVAILABLE_SPACE: CellPredicate = { _, state, _ ->
+        state.isIn(BlockTags.PICKAXE_MINEABLE) || state.isIn(BlockTags.SHOVEL_MINEABLE) || state.isAir
+    }
+
+    val FLOOD_FILL: (World, BlockPos, CellPredicate, Boolean, Region?) -> Pair<Int, Iterable<BlockPos>>? =
+        { world, spos, check, limitEdges, region ->
+
+            val queue: Queue<BlockPos> = ArrayDeque()
+            val visited = HashSet<BlockPos>()
+            var iterations = 0
+            var edgesCount = 0
+            var totalCount = 0
+            val edges = mutableListOf<BlockPos>()
+
+            queue.add(spos)
+
+            while (queue.isNotEmpty()) {
+                val current = queue.poll()
+
+                // skip if already visited or out of region
+                if (!visited.add(current)) continue
+                if (region != null && !region.contains(current)) continue
+
                 iterations++
-                if (edgesCount >= 32 || iterations >= 512) {
-                    break
-                }
+                if (edgesCount >= 32 || iterations >= 512) break
+
                 var blockedCount = 0
                 var freeCount = 0
+
                 BlockIterator.TOUCHING(current).forEach { pos ->
-                    if (!visited.contains(pos)) {
+                    if (!visited.contains(pos) && (region == null || region.contains(pos))) {
                         val state = world.getBlockState(pos)
                         if (check(pos, state, visited)) {
                             queue.add(pos)
@@ -150,23 +179,82 @@ object BlockIterator {
                             freeCount++
                         }
                     } else {
-                        if (blockedCount <= 3) {
-                            blockedCount++
-                        }
+                        if (blockedCount <= 3) blockedCount++
                     }
                 }
-                // counts possible edges
-                if ((blockedCount == 3 && freeCount == 0) ||
-                    (blockedCount == 1 && freeCount == 2) ||
-                    (blockedCount == 2 && freeCount == 1)
-                ) {
+
+                if (limitEdges) {
+                    if ((blockedCount == 3 && freeCount == 0) ||
+                        (blockedCount == 1 && freeCount == 2) ||
+                        (blockedCount == 2 && freeCount == 1)
+                    ) {
+                        edgesCount++
+                        edges.add(current)
+                    }
+                } else {
                     edgesCount++
                     edges.add(current)
                 }
             }
-            visited.add(current)
+
+            queue.clear()
+
+            if (edgesCount <= 32 && iterations <= 512) {
+                Pair(totalCount, edges)
+            } else {
+                null
+            }
         }
-        queue.clear()
-        if (edgesCount <= 32 && iterations <= 512) Pair(totalCount, edges) else null
-    }
+
+    // val FLOOD_FILL: (World, BlockPos, CellPredicate, Boolean) -> Pair<Int, Iterable<BlockPos>>? = { world, spos, check, limitEdges ->
+    //    val queue: Queue<BlockPos> = ArrayDeque()
+    //    val visited = HashSet<BlockPos>()
+    //    var iterations = 0
+    //    var edgesCount = 0
+    //    var totalCount = 0
+    //    queue.add(spos)
+    //    val edges = mutableListOf<BlockPos>()
+    //    while (queue.isNotEmpty()) {
+    //        val current = queue.poll()
+    //        if (!visited.contains(current)) {
+    //            iterations++
+    //            if (edgesCount >= 32 || iterations >= 512) {
+    //                break
+    //            }
+    //            var blockedCount = 0
+    //            var freeCount = 0
+    //            BlockIterator.TOUCHING(current).forEach { pos ->
+    //                if (!visited.contains(pos)) {
+    //                    val state = world.getBlockState(pos)
+    //                    if (check(pos, state, visited)) {
+    //                        queue.add(pos)
+    //                        totalCount++
+    //                        freeCount++
+    //                    }
+    //                } else {
+    //                    if (blockedCount <= 3) {
+    //                        blockedCount++
+    //                    }
+    //                }
+    //            }
+    //            // TODO: transform this into a lambda
+    //            if (limitEdges) {
+    //                // counts possible edges
+    //                if ((blockedCount == 3 && freeCount == 0) ||
+    //                    (blockedCount == 1 && freeCount == 2) ||
+    //                    (blockedCount == 2 && freeCount == 1)
+    //                ) {
+    //                    edgesCount++
+    //                    edges.add(current)
+    //                }
+    //            } else {
+    //                edgesCount++
+    //                edges.add(current)
+    //            }
+    //        }
+    //        visited.add(current)
+    //    }
+    //    queue.clear()
+    //    if (edgesCount <= 32 && iterations <= 512) Pair(totalCount, edges) else null
+    // }
 }
