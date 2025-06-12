@@ -36,7 +36,7 @@ public abstract class MinecraftServerMixin {
 
   @Inject(method = "createWorlds", at = @At(value = "INVOKE", target = "Lnet/minecraft/server/MinecraftServer;initScoreboard(Lnet/minecraft/world/PersistentStateManager;)V", shift = At.Shift.AFTER), locals = LocalCapture.CAPTURE_FAILHARD)
   private void initSettlementManager(WorldGenerationProgressListener worldGenerationProgressListener, CallbackInfo ci, @Local PersistentStateManager persistentStateManager) {
-      SettlementManager settlementManager = persistentStateManager.getOrCreate(SettlementManager.getPersistentStateType(), "settlements");
+      SettlementManager settlementManager = persistentStateManager.getOrCreate(SettlementManager.getPersistentStateType());
       SettlementManager.Companion.setInstance(settlementManager);
   }
 

@@ -19,11 +19,14 @@ import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
 import net.minecraft.world.World;
 import net.minecraft.block.BlockState;
+import net.minecraft.block.Block;
 import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.block.BlockState;
 import net.minecraft.entity.player.PlayerEntity;
 import org.jetbrains.annotations.Nullable;
 import net.minecraft.util.ActionResult;
+import com.settlement.mod.item.HandBellItem;
+import com.settlement.mod.block.ModBlocks;
 import org.slf4j.LoggerFactory;
 import org.slf4j.Logger;
 
@@ -33,36 +36,13 @@ public abstract class BellBlockMixin {
     public void ring(World world, BlockState state, BlockHitResult hitResult, @Nullable PlayerEntity player, boolean checkHitPos, CallbackInfoReturnable<Boolean> cir) {
         if (player != null) {
             ItemStack itemStack = player.getMainHandStack();
-            if (itemStack.isOf(Items.NAME_TAG) && itemStack.hasCustomName()) {
+            if (itemStack.isOf(Items.NAME_TAG) && itemStack.getCustomName() != null) {
                 Settlement settlement = SettlementManager.Companion.getInstance().addSettlement(itemStack.getName().getString(), hitResult.getBlockPos(), player);
                 if (settlement != null) {
+                    world.setBlockState(hitResult.getBlockPos(), ModBlocks.ENCHANTED_BELL.getDefaultState(), Block.NOTIFY_ALL);
                     itemStack.decrement(1);
                 } else {
                     cir.cancel();
-                }
-            } else if (itemStack.isOf(ModItems.HAND_BELL)) {
-                SettlementManager manager = SettlementManager.Companion.getInstance();
-                List<Settlement> settlements = manager.getSettlements();
-                Settlement settlement = null;
-                for (Settlement s : settlements) {
-                    if (s.getPos().equals(hitResult.getBlockPos())) {
-                        settlement = s;
-                        break;
-                    }
-                }
-
-                if (settlement != null) {
-                    NbtCompound nbt = itemStack.getOrCreateNbt();
-                    String currentBind = nbt.contains("Bind") ? nbt.getString("Bind") : "";
-                    if (currentBind.equals(settlement.getName())) {
-                        nbt.putString("Bind", "");
-                        Response.UNBINDED_SETTLEMENT.send(player, settlement.getName());
-                    } else if (currentBind.equals("")) {
-                        nbt.putString("Bind", settlement.getName());
-                        Response.BINDED_TO_SETTLEMENT.send(player, settlement.getName());
-                    } else {
-                        Response.ALREADY_BINDED_TO_A_SETTLEMENT.send(player);
-                    }
                 }
             }
         }
