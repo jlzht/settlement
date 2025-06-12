@@ -1,5 +1,6 @@
 package com.settlement.mod.world
 
+import com.settlement.mod.LOGGER
 import com.settlement.mod.action.Action
 import com.settlement.mod.entity.mob.AbstractVillagerEntity
 import com.settlement.mod.entity.mob.ErrandSource
@@ -9,6 +10,7 @@ import com.settlement.mod.structure.StructureType
 
 object SettlementAccessor {
     val HOUSING = setOf(StructureType.HOUSE)
+    val FREEING = setOf(StructureType.CAMPFIRE)
 
     val SOURCE_TO_KEY =
         mapOf(
@@ -48,9 +50,15 @@ object SettlementAccessor {
                         errandSource,
                         { key -> structure.getErrands(key) },
                     )
+                } else {
+                    // dettaches if structure updates not keeping villager Key
+                    entity.errandManager.setKey(key, 0)
+                    entity.errandManager.attachProvider(errandSource, null)
                 }
             } ?: run {
+                // dettaches if structure is deleted 
                 entity.errandManager.setKey(key, 0)
+                entity.errandManager.attachProvider(errandSource, null)
             }
         }
     }
@@ -68,6 +76,8 @@ object SettlementAccessor {
                     val source =
                         if (HOUSING.contains(type)) {
                             ErrandSource.HOME
+                        } else if (FREEING.contains(type)) {
+                            ErrandSource.FREE
                         } else {
                             ErrandSource.WORK
                         }

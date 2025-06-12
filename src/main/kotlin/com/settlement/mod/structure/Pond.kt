@@ -4,42 +4,31 @@ import com.settlement.mod.action.Action
 import com.settlement.mod.action.Errand
 import com.settlement.mod.screen.Response
 import com.settlement.mod.util.BlockIterator
-import com.settlement.mod.util.Finder
 import com.settlement.mod.util.Region
 import net.minecraft.block.Blocks
 import net.minecraft.entity.player.PlayerEntity
+import net.minecraft.registry.tag.FluidTags
 import net.minecraft.util.math.BlockPos
 import net.minecraft.world.World
 
 class Pond(
-    lower: BlockPos,
-    upper: BlockPos,
+    override val region: Region,
 ) : Structure() {
-    override val maxCapacity: Int = 4
-    override val volumePerResident: Int = 15
+    override val maxCapacity: Int = 1
+    override val volumePerResident: Int = 16
     override var type: StructureType = StructureType.POND
 
-    override var region: Region = Region(lower, upper)
     override val residents: MutableList<Int> = MutableList(maxCapacity) { -1 }
-    override var capacity: Int
-        get() = getResidents().size
-        set(value) {
-        }
-
+    
     override fun updateErrands(world: World) {
-        // add method to get Y height of region
-        BlockIterator.CUBOID(region.lower.add(-1, 0, -1), region.upper.add(1, 0, 1)).let { entries ->
-            entries.shuffled().take(5).forEach { taken ->
+        BlockIterator.CUBOID(region.lower, region.upper).let { entries ->
+            entries.shuffled().take(3).forEach { taken ->
                 if (world.getBlockState(taken).isOf(Blocks.WATER)) {
                     errands.add(Errand(Action.Type.FISH, taken))
-                    if (region.volume() < 60 && !region.contains(taken)) {
-                        region.append(taken)
-                    }
                 }
             }
         }
-        updatedCapacity = region.volume() / volumePerResident
-        updateCapacity()
+        updateCapacity(region.volume() / volumePerResident)
     }
 
     override fun getErrands(vid: Int): List<Errand>? {
@@ -47,7 +36,7 @@ class Pond(
         if (!residents.contains(vid)) {
             emptyList<Errand>()
         }
-        val taken = errands.take(2)
+        val taken = errands.take(1)
         errands.removeAll(taken)
         return taken
     }
@@ -58,32 +47,33 @@ class Pond(
             player: PlayerEntity,
         ): Structure? {
             val world = player.world
-            // This check will be removed in the future
-            val check = BlockIterator.BOTTOM(pos).all { world.getBlockState(it).isSolid } && world.getBlockState(pos.up()).isAir
+            val check =
+                BlockIterator.NEIGHBOURS(pos).all { p ->
+                    world.getFluidState(p).isIn(FluidTags.WATER) && world.getBlockState(p.up()).isAir
+                }
             if (!check) {
                 Response.BLOCKS_MUST_BE_SOLID.send(player)
                 return null
             }
 
-            Finder.findWaterBlock(pos, world)?.let { wpos ->
-                BlockIterator.FLOOD_FILL(world, wpos, BlockIterator.RIVER_AVAILABLE_SPACE)?.let { (waterCount, _) ->
-                    if (waterCount < 32) {
-                        Response.SMALL_BODY_WATER.send(player)
-                        return null
-                    }
-                    val pond = Pond(wpos, wpos)
-                    Response.NEW_STRUCTURE.send(player, pond.type.name)
-                    return pond
-                } ?: run {
-                    // flood fill fails and returns null if to many iteration occurs, in this case it means a river was found!
-                    val pond = Pond(wpos, wpos)
-                    Response.NEW_STRUCTURE.send(player, pond.type.name)
-                    return pond
+            BlockIterator.FLOOD_FILL(world, pos, BlockIterator.RIVER_AVAILABLE_SPACE, true, null)?.let { (waterCount, _) ->
+                if (waterCount < 32) {
+                    Response.SMALL_BODY_WATER.send(player)
+                    return null
                 }
+                val region = Region(pos.add(-1, 0, -1), pos.add(1, 0, 1))
+                val pond = Pond(region)
+                Response.NEW_STRUCTURE.send(player, pond.type.name)
+                return pond
             } ?: run {
-                Response.NOT_ENOUGH_WATER.send(player)
-                return null
+                // flood fill returns null if to many iteration occurs, in this case it means a river was found!
+                val region = Region(pos.add(-1, 0, -1), pos.add(1, 0, 1))
+                val pond = Pond(region)
+                Response.NEW_STRUCTURE.send(player, pond.type.name)
+                return pond
             }
+            Response.NOT_ENOUGH_WATER.send(player)
+            return null
         }
     }
 }

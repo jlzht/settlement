@@ -3,7 +3,6 @@ package com.settlement.mod.util
 import com.settlement.mod.action.Action
 import com.settlement.mod.action.Errand
 import com.settlement.mod.entity.mob.AbstractVillagerEntity
-import net.minecraft.util.math.Vec3d
 import net.minecraft.block.Blocks
 import net.minecraft.block.DoorBlock
 import net.minecraft.block.FenceGateBlock
@@ -11,6 +10,7 @@ import net.minecraft.entity.LivingEntity
 import net.minecraft.entity.ai.NoPenaltyTargeting
 import net.minecraft.entity.ai.pathing.Path
 import net.minecraft.util.math.BlockPos
+import net.minecraft.util.math.Vec3d
 import net.minecraft.world.World
 
 object Finder {
@@ -39,17 +39,19 @@ object Finder {
             ?.let {
                 return Errand(Action.Type.MOVE, it)
             }
+
     // TODO: sometimes unreachable blocks are pushed
     fun findFleeBlock(
         entity: AbstractVillagerEntity,
         target: LivingEntity,
     ): Errand? {
-        val corners = listOf(
-            Vec3d(target.x + 0.0, target.y, target.z + 0.0),
-            Vec3d(target.x + 16.0, target.y, target.z + 0.0),
-            Vec3d(target.x + 0.0, target.y, target.z + 16.0),
-            Vec3d(target.x + 16.0, target.y, target.z + 16.0),
-        )
+        val corners =
+            listOf(
+                Vec3d(target.x + 0.0, target.y, target.z + 0.0),
+                Vec3d(target.x + 16.0, target.y, target.z + 0.0),
+                Vec3d(target.x + 0.0, target.y, target.z + 16.0),
+                Vec3d(target.x + 16.0, target.y, target.z + 16.0),
+            )
 
         val fleeTargetPos = corners.maxByOrNull { it.squaredDistanceTo(entity.pos) } ?: entity.pos
 
@@ -59,19 +61,47 @@ object Finder {
         return null
     }
 
-    fun findWanderBlock(
-        entity: AbstractVillagerEntity,
-    ): Errand? {
+    fun findWanderBlock(entity: AbstractVillagerEntity): Errand? {
         NoPenaltyTargeting.findFrom(entity, 8, 8, entity.getPos())?.let { t ->
             return Errand(Action.Type.WANDER, BlockPos(t.x.toInt(), t.y.toInt(), t.z.toInt()))
         }
         return null
     }
 
-    fun findSeekBlock(
-        entity: AbstractVillagerEntity,
-    ): Errand? {
-        return Errand(Action.Type.SEEK, null)
+    fun findRandomSampleCuboid(
+        world: World,
+        pos: BlockPos,
+        count: Int,
+    ): Set<BlockPos> {
+        val set = mutableSetOf<BlockPos>()
+        val lower = pos.add(-4, -4, -4)
+        val upper = pos.add(4, 4, 4)
+
+        repeat(count) {
+            val x = world.random.nextInt(upper.x - lower.x + 1) + lower.x
+            val y = world.random.nextInt(upper.y - lower.y + 1) + lower.y
+            val z = world.random.nextInt(upper.z - lower.z + 1) + lower.z
+            set.add(BlockPos(x, y, z))
+        }
+        return set
+    }
+
+    fun findSeekBlock(entity: AbstractVillagerEntity): Errand {
+        val r = entity.random
+        val pos =
+            if (r.nextFloat() < 0.1f) {
+                val offset =
+                    BlockPos(
+                        r.nextInt(10) - 5,
+                        1 + r.nextInt(1),
+                        r.nextInt(10) - 5,
+                    )
+                entity.blockPos.add(offset)
+            } else {
+                null
+            }
+
+        return Errand(Action.Type.SEEK, pos)
     }
 
     fun findEntranceBlock(

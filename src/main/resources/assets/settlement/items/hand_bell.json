@@ -1,0 +1,6 @@
+{  
+  "model": {
+    "type": "minecraft:model",
+    "model": "settlement:item/hand_bell"
+  }
+}

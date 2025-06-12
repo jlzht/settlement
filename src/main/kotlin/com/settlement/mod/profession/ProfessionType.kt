@@ -8,6 +8,8 @@ enum class ProfessionType {
     FISHERMAN,
     RECRUIT,
     MERCHANT,
+    LUMBERJACK,
+    MINER,
     GUARD,
     SHEPHERD,
 }

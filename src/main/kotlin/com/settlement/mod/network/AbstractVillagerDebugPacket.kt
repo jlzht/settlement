@@ -1,9 +1,10 @@
 package com.settlement.mod.network
 
 import com.settlement.mod.MODID
-import net.fabricmc.fabric.api.networking.v1.PacketByteBufs
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking
-import net.minecraft.network.PacketByteBuf
+import net.minecraft.network.RegistryByteBuf
+import net.minecraft.network.codec.PacketCodec
+import net.minecraft.network.packet.CustomPayload
 import net.minecraft.server.network.ServerPlayerEntity
 import net.minecraft.util.Identifier
 import java.util.UUID
@@ -15,28 +16,31 @@ data class VillagerDebugData(
 
 data class VillagerDebugPacket(
     val data: VillagerDebugData,
-) {
-    companion object {
-        val ID = Identifier(MODID, "villager_debug")
+) : CustomPayload {
+    override fun getId(): CustomPayload.Id<out CustomPayload> = ID
 
-        fun encode(
+    companion object {
+        val ID = CustomPayload.Id<VillagerDebugPacket>(Identifier.of(MODID, "villager_debug"))
+
+        val CODEC: PacketCodec<RegistryByteBuf, VillagerDebugPacket> =
+            PacketCodec.of(
+                { packet, buf -> encode(packet, buf) },
+                { buf -> decode(buf) },
+            )
+
+        private fun encode(
             packet: VillagerDebugPacket,
-            buf: PacketByteBuf,
+            buf: RegistryByteBuf,
         ) {
             buf.writeUuid(packet.data.uuid)
             buf.writeInt(packet.data.lines.size)
-            packet.data.lines.forEach { line ->
-                buf.writeString(line)
-            }
+            packet.data.lines.forEach { buf.writeString(it) }
         }
 
-        fun decode(buf: PacketByteBuf): VillagerDebugPacket {
-            val lines = mutableListOf<String>()
+        private fun decode(buf: RegistryByteBuf): VillagerDebugPacket {
             val uuid = buf.readUuid()
             val size = buf.readInt()
-            repeat(size) {
-                lines.add(buf.readString())
-            }
+            val lines = List(size) { buf.readString() }
             return VillagerDebugPacket(VillagerDebugData(uuid, lines))
         }
 
@@ -45,9 +49,7 @@ data class VillagerDebugPacket(
             uuid: UUID,
             lines: List<String>,
         ) {
-            val buf = PacketByteBufs.create()
-            encode(VillagerDebugPacket(VillagerDebugData(uuid, lines)), buf)
-            ServerPlayNetworking.send(player, ID, buf)
+            ServerPlayNetworking.send(player, VillagerDebugPacket(VillagerDebugData(uuid, lines)))
         }
     }
 }

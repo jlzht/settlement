@@ -11,25 +11,18 @@ import net.minecraft.block.FarmlandBlock
 import net.minecraft.entity.player.PlayerEntity
 import net.minecraft.util.math.BlockPos
 import net.minecraft.world.World
-import kotlin.collections.emptyList
 
 class Farm(
-    val lower: BlockPos,
-    val upper: BlockPos,
+    override val region: Region,
 ) : Structure() {
     override val maxCapacity: Int = 4
     override val volumePerResident: Int = 25
     override var type: StructureType = StructureType.FARM
-    override var region: Region = Region(lower, upper)
     override val residents: MutableList<Int> = MutableList(maxCapacity) { -1 }
-    override var capacity: Int
-        get() = getResidents().size
-        set(value) {
-        }
 
     override fun updateErrands(world: World) {
         BlockIterator.CUBOID(region.lower.add(-1, 0, -1), region.upper.add(1, 0, 1)).forEach { pos ->
-            getFarmAction(pos, world)?.let { action ->
+            getAction(pos, world)?.let { action ->
                 if (!region.contains(pos)) {
                     region.append(pos)
                 }
@@ -39,8 +32,7 @@ class Farm(
                 }
             }
         }
-        updatedCapacity = region.volume() / volumePerResident
-        updateCapacity()
+        updateCapacity(region.volume() / volumePerResident)
     }
 
     override fun getErrands(vid: Int): List<Errand>? {
@@ -54,7 +46,7 @@ class Farm(
         return taken
     }
 
-    private fun getFarmAction(
+    private fun getAction(
         pos: BlockPos,
         world: World,
     ): Action.Type? {
@@ -68,7 +60,7 @@ class Farm(
                 if (upBlock is CropBlock) {
                     if (upBlock.isMature(up)) {
                         return Action.Type.HARVEST
-                    } else if (world.random.nextInt(20) == 0) {
+                    } else if (world.random.nextInt(40) == 0) {
                         return Action.Type.POWDER
                     }
                 }
@@ -120,7 +112,8 @@ class Farm(
                 world.getBlockState(pos.south().east()).isOf(Blocks.FARMLAND) ||
                 world.getBlockState(pos.south().west()).isOf(Blocks.FARMLAND)
             ) {
-                val farm = Farm(pos, pos)
+                val region = Region(pos, pos)
+                val farm = Farm(region)
                 Response.NEW_STRUCTURE.send(player, farm.type.name)
                 return farm
             } else {

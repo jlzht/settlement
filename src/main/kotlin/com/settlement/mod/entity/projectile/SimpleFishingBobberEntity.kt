@@ -1,27 +1,28 @@
 package com.settlement.mod.entity.projectile
 
-import com.settlement.mod.Settlement
+import com.settlement.mod.entity.ModEntities
 import com.settlement.mod.entity.mob.AbstractVillagerEntity
 import net.minecraft.entity.Entity
 import net.minecraft.entity.EntityType
 import net.minecraft.entity.ItemEntity
 import net.minecraft.entity.MovementType
+import net.minecraft.entity.data.DataTracker
 import net.minecraft.entity.projectile.ProjectileEntity
 import net.minecraft.entity.projectile.ProjectileUtil
 import net.minecraft.fluid.FluidState
 import net.minecraft.loot.LootTables
-import net.minecraft.loot.context.LootContextParameterSet
 import net.minecraft.loot.context.LootContextParameters
 import net.minecraft.loot.context.LootContextTypes
+import net.minecraft.loot.context.LootWorldContext
 import net.minecraft.nbt.NbtCompound
 import net.minecraft.network.listener.ClientPlayPacketListener
 import net.minecraft.network.packet.Packet
 import net.minecraft.network.packet.s2c.play.EntitySpawnS2CPacket
 import net.minecraft.registry.tag.FluidTags
+import net.minecraft.server.network.EntityTrackerEntry
 import net.minecraft.server.world.ServerWorld
 import net.minecraft.util.Hand
 import net.minecraft.util.hit.BlockHitResult
-import net.minecraft.util.hit.EntityHitResult
 import net.minecraft.util.hit.HitResult
 import net.minecraft.util.math.BlockPos
 import net.minecraft.util.math.MathHelper
@@ -49,11 +50,10 @@ class SimpleFishingBobberEntity(
     init {
         this.luckOfTheSeaLevel = maxOf(0, luckOfTheSeaLevel)
         this.lureLevel = maxOf(0, lureLevel)
-        this.ignoreCameraFrustum = true
     }
 
     constructor(thrower: AbstractVillagerEntity, world: World, luckOfTheSeaLevel: Int, lureLevel: Int) : this(
-        Settlement.SIMPLE_FISHING_BOBBER,
+        ModEntities.SIMPLE_FISHING_BOBBER,
         world,
         luckOfTheSeaLevel,
         lureLevel,
@@ -84,18 +84,9 @@ class SimpleFishingBobberEntity(
         super.setOwner(entity)
     }
 
-    override fun initDataTracker() {}
+    override fun initDataTracker(build: DataTracker.Builder) {}
 
     override fun shouldRender(distance: Double): Boolean = distance < 2048.0
-
-    override fun updateTrackedPositionAndAngles(
-        x: Double,
-        y: Double,
-        z: Double,
-        yaw: Float,
-        pitch: Float,
-        interpolationSteps: Int,
-    ) {}
 
     override fun tick() {
         super.tick()
@@ -105,28 +96,28 @@ class SimpleFishingBobberEntity(
                 val world = entity.world
                 val stack = entity.getStackInHand(Hand.MAIN_HAND)
                 if (!entity.world.isClient) {
-                    val lootContextParameterSet =
-                        LootContextParameterSet
-                            .Builder(world as ServerWorld)
+                    val lootWorldContext =
+                        LootWorldContext
+                            .Builder(this.getWorld() as ServerWorld)
                             .add(LootContextParameters.ORIGIN, this.pos)
                             .add(LootContextParameters.TOOL, stack)
                             .add(LootContextParameters.THIS_ENTITY, this)
                             // .luck(luckOfTheSeaLevel.toFloat() + entity.luck.toFloat())
                             .build(LootContextTypes.FISHING)
-                    val lootTable = world.server.lootManager.getLootTable(LootTables.FISHING_GAMEPLAY)
-                    val lootList = lootTable.generateLoot(lootContextParameterSet)
-
-                    for (itemStack in lootList) {
-                        val itemEntity = ItemEntity(world, this.x, this.y, this.z, itemStack)
-                        val d = entity.x - this.x
-                        val e = entity.y - this.y
-                        val f = entity.z - this.z
-                        val g = 0.1
-                        itemEntity.setVelocity(d * 0.1, e * 0.1 + Math.sqrt(Math.sqrt(d * d + e * e + f * f)) * 0.08, f * 0.1)
-                        world.spawnEntity(itemEntity)
+                    world.getServer()?.let { server ->
+                        val loot = server.getReloadableRegistries().getLootTable(LootTables.FISHING_GAMEPLAY)
+                        val lootList = loot.generateLoot(lootWorldContext)
+                        for (itemStack in lootList) {
+                            val itemEntity = ItemEntity(world, this.x, this.y, this.z, itemStack)
+                            val d = entity.x - this.x
+                            val e = entity.y - this.y
+                            val f = entity.z - this.z
+                            val g = 0.1
+                            itemEntity.setVelocity(d * g, e * g + Math.sqrt(Math.sqrt(d * d + e * e + f * f)) * 0.08, f * g)
+                            world.spawnEntity(itemEntity)
+                        }
+                        this.discard()
                     }
-                    this.discard()
-
                 }
             }
             return
@@ -191,14 +182,7 @@ class SimpleFishingBobberEntity(
         onCollision(hitResult)
     }
 
-    override fun canHit(entity: Entity?): Boolean {
-        return false
-        // super.canHit(entity)
-    }
-
-    override fun onEntityHit(entityHitResult: EntityHitResult) {
-        // super.onEntityHit(entityHitResult)
-    }
+    override fun canHit(entity: Entity?) = false
 
     override fun onBlockHit(blockHitResult: BlockHitResult) {
         super.onBlockHit(blockHitResult)
@@ -216,26 +200,26 @@ class SimpleFishingBobberEntity(
     override fun getMoveEffect(): Entity.MoveEffect = Entity.MoveEffect.NONE
 
     override fun remove(reason: Entity.RemovalReason?) {
-       this.getOwner()?.let { owner ->
-          owner as AbstractVillagerEntity
-          owner.setWorking(false)
-       }
-       super.remove(reason)
+        this.getOwner()?.let { owner ->
+            owner as AbstractVillagerEntity
+            if (owner.isAlive) owner.setWorking(false)
+        }
+        super.remove(reason)
     }
 
     override fun onRemoved() {}
 
-    override fun canUsePortals(): Boolean = false
+    override fun canUsePortals(allowVehicles: Boolean): Boolean = false
 
-    override fun createSpawnPacket(): Packet<ClientPlayPacketListener> {
+    override fun createSpawnPacket(entityTrackerEntry: EntityTrackerEntry): Packet<ClientPlayPacketListener> {
         val entity: Entity? = this.getOwner()
-        return EntitySpawnS2CPacket(this, entity?.id ?: id)
+        return EntitySpawnS2CPacket(this, entityTrackerEntry, entity?.id ?: id)
     }
 
     override fun onSpawnPacket(packet: EntitySpawnS2CPacket) {
         super.onSpawnPacket(packet)
         if (this.getOwner() == null) {
-            kill()
+            this.discard()
         }
     }
 

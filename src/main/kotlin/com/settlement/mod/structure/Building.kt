@@ -9,7 +9,6 @@ import net.minecraft.block.BedBlock
 import net.minecraft.block.BlockState
 import net.minecraft.block.ChestBlock
 import net.minecraft.block.DoorBlock
-import net.minecraft.block.FletchingTableBlock
 import net.minecraft.block.SlabBlock
 import net.minecraft.block.enums.BedPart
 import net.minecraft.entity.player.PlayerEntity
@@ -18,62 +17,17 @@ import net.minecraft.world.World
 
 class Building(
     override var type: StructureType,
-    lower: BlockPos,
-    upper: BlockPos,
+    override val region: Region,
 ) : Structure() {
     override val maxCapacity: Int = 4
     override val volumePerResident: Int = 32
-    override var region: Region = Region(lower, upper)
 
     override val residents: MutableList<Int> = MutableList(maxCapacity) { -1 }
-    override var capacity: Int
-        get() = getResidents().size
-        set(value) {
-        }
-
-    private fun sortErrands(foundErrands: List<Errand>): List<Errand> {
-        val mainActionType = Action.Type.SLEEP // Define the main action type for sorting
-        val mainErrands = foundErrands.filter { it.cid == mainActionType }
-        val mutableErrands = mainErrands.toMutableList()
-        updatedCapacity = mainErrands.count()
-
-        val remainingErrands = foundErrands.filter { it.cid != mainActionType }.toMutableList()
-
-        remainingErrands.forEach { errand ->
-            val nearestMainErrand =
-                mainErrands.minByOrNull {
-                    it.pos!!.getSquaredDistance(errand.pos)
-                }
-
-            if (nearestMainErrand != null) {
-                var start = 0
-                val ranges = mutableListOf<Pair<Int, Int>>()
-                for ((index, e) in mutableErrands.withIndex()) {
-                    if (e.cid == mainActionType) {
-                        ranges.add(Pair(start, index))
-                        start = index + 1
-                    }
-                }
-                var inserted = false
-                for (range in ranges) {
-                    if (inserted) continue
-                    if (mutableErrands.subList(range.first, range.second).find { it.cid == errand.cid } == null) {
-                        mutableErrands.add(range.first, errand)
-                        inserted = true
-                    }
-                }
-            }
-        }
-        capacity = mainErrands.count()
-        return mutableErrands
-    }
 
     override fun getErrands(vid: Int): List<Errand>? {
         if (!hasErrands()) return null
-        if (!residents.contains(vid)) {
-            emptyList<Errand>()
-        }
-        val index = getResidentIndex(vid)
+        if (!residents.contains(vid)) return emptyList<Errand>()
+        val index = getResidentIndex(vid) ?: return null
         extractErrandsByIndex(index)?.let {
             return it
         }
@@ -87,20 +41,22 @@ class Building(
                 pickedErrands.add(Errand(action, pos))
             }
         }
-        val sortedErrands = sortErrands(pickedErrands)
+        val sortedErrands = sortErrands(pickedErrands, Action.Type.SLEEP)
         errands.addAll(sortedErrands)
-        this.updateCapacity()
+        this.updateCapacity(pickedErrands.count { it.cid == Action.Type.SLEEP })
     }
 
     private fun extractErrandsByIndex(index: Int): List<Errand>? {
-        val indicesOfOnes =
+        val indicesOfSleep =
             errands
                 .withIndex()
                 .filter { it.value.cid == Action.Type.SLEEP }
                 .map { it.index }
-        if (index <= 0 || index > indicesOfOnes.size) return null
-        val startIndex = if (index == 1) 0 else indicesOfOnes[index - 2] + 1
-        val endIndex = indicesOfOnes[index - 1]
+
+        if (index !in indicesOfSleep.indices) return null
+
+        val startIndex = if (index == 0) 0 else indicesOfSleep[index - 1] + 1
+        val endIndex = indicesOfSleep[index]
 
         return errands.subList(startIndex, endIndex + 1)
     }
@@ -110,16 +66,17 @@ class Building(
             val set: Set<Action.Type>,
         ) {
             HOUSE(setOf(Action.Type.SLEEP, Action.Type.STORE, Action.Type.SIT)),
-            BARRACK(setOf(Action.Type.SLEEP)),
+            BARRACKS(setOf(Action.Type.SLEEP)),
         }
 
-        private fun getAction(state: BlockState): Action.Type? {
+        private fun getAction(state: BlockState): Action.Type? =
             when (state.block) {
                 is BedBlock -> {
-                    if (state.get(BedBlock.PART) == BedPart.HEAD) return Action.Type.SLEEP else return null
+                    if (state.get(BedBlock.PART) == BedPart.HEAD) Action.Type.SLEEP else null
                 }
-                is ChestBlock -> return Action.Type.STORE
-                is SlabBlock -> return Action.Type.SIT
+                is ChestBlock -> Action.Type.STORE
+                is SlabBlock -> Action.Type.SIT
+                else -> null
                 // is FletchingTableBlock -> return Action.Type.YIELD
                 // is SmokerBlock -> return Action.Type.COOK
                 // is AnvilBlock -> return Action.Type.FORGE
@@ -127,8 +84,6 @@ class Building(
                 // is AbstractCauldronBlock -> return Action.Type.FILL
                 // is BrewingStandBlock -> return Action.Type.BREW
             }
-            return null
-        }
 
         fun getBuildingType(
             region: Region,
@@ -152,6 +107,7 @@ class Building(
             pos: BlockPos,
             player: PlayerEntity,
         ): Structure? {
+            // used to find relative to door where to check for enclosed region
             val d = player.world.getBlockState(pos).get(DoorBlock.FACING)
             val r = player.blockPos.getSquaredDistance(pos.offset(d, 1).toCenterPos())
             val l = player.blockPos.getSquaredDistance(pos.offset(d.getOpposite(), 1).toCenterPos())
@@ -162,7 +118,7 @@ class Building(
                     pos.offset(d.getOpposite())
                 }
 
-            BlockIterator.FLOOD_FILL(player.world, spos, BlockIterator.BUILDING_AVAILABLE_SPACE)?.let { (lightCount, edges) ->
+            BlockIterator.FLOOD_FILL(player.world, spos, BlockIterator.BUILDING_AVAILABLE_SPACE, true, null)?.let { (lightCount, edges) ->
                 val region = Region(spos, spos)
                 edges.forEach { edge ->
                     region.append(edge)
@@ -179,7 +135,7 @@ class Building(
                 }
                 getBuildingType(region, player.world)?.let { type ->
                     Response.NEW_STRUCTURE.send(player, type.name)
-                    return Building(type, region.lower, region.upper)
+                    return Building(type, region)
                 }
             }
             Response.NOT_ENOUGH_FURNITURE.send(player)

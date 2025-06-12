@@ -9,8 +9,8 @@ import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback
 import net.minecraft.server.command.ServerCommandSource
 import net.minecraft.text.Text
 
-object  ModCommands {
-    fun register() {
+object ModCommands {
+    fun initialize() {
         CommandRegistrationCallback.EVENT.register { dispatcher, _, _ ->
             dispatcher.register(
                 LiteralArgumentBuilder

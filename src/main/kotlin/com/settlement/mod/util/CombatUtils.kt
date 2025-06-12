@@ -1,13 +1,12 @@
 package com.settlement.mod.util
 
 import com.settlement.mod.entity.mob.AbstractVillagerEntity
-import net.minecraft.enchantment.EnchantmentHelper
-import net.minecraft.enchantment.Enchantments
+import net.minecraft.entity.Entity
+import net.minecraft.entity.EquipmentSlot
 import net.minecraft.entity.LivingEntity
-import net.minecraft.entity.projectile.PersistentProjectileEntity
+import net.minecraft.entity.projectile.ArrowEntity
 import net.minecraft.entity.projectile.ProjectileEntity
-import net.minecraft.entity.projectile.ProjectileUtil
-import net.minecraft.item.CrossbowItem
+import net.minecraft.item.ArrowItem
 import net.minecraft.item.ItemStack
 import net.minecraft.item.Items
 import net.minecraft.sound.SoundEvents
@@ -24,21 +23,21 @@ object CombatUtils {
         hand: Hand,
         isCrossbow: Boolean,
     ) {
-        val item = entity.getProjectileType(entity.getStackInHand(hand))
-        val projectileEntity: PersistentProjectileEntity = ProjectileUtil.createArrowProjectile(entity, item, 1.0f)
+        val arrow = (Items.ARROW as ArrowItem).defaultStack.copyWithCount(1)
+        val projectileEntity = ArrowEntity(entity.world, entity, arrow, itemStack)
+        projectileEntity.applyDamageModifier(1.02f)
         if (entity.random.nextFloat() < 0.05f) {
             projectileEntity.setCritical(true)
         }
+
         if (isCrossbow) {
             projectileEntity.setSound(SoundEvents.ITEM_CROSSBOW_HIT)
-            projectileEntity.setShotFromCrossbow(true)
-            val i: Byte = EnchantmentHelper.getLevel(Enchantments.PIERCING, itemStack).toByte()
-            if (i > 0) projectileEntity.setPierceLevel(i)
-            CrossbowItem.setCharged(itemStack, false)
+            // val i: Byte = EnchantmentHelper.getLevel(Enchantments.PIERCING, itemStack).toByte()
+            // if (i > 0) projectileEntity.setPierceLevel(i)
         }
         shootTo(entity, target, projectileEntity, 1.0f, 1.6f)
         entity.world.spawnEntity(projectileEntity)
-        itemStack.damage(1, entity, { e -> e.sendToolBreakStatus(hand) })
+        itemStack.damage(1, entity, EquipmentSlot.MAINHAND)
     }
 
     private fun shootTo(
@@ -76,5 +75,18 @@ object CombatUtils {
         }
         val vector3f3 = vector3f.rotateAxis(0.0f, vector3f2.x, vector3f2.y, vector3f2.z)
         return vector3f.rotateAxis(multishotSpray * (Math.PI.toFloat() / 180), vector3f3.x, vector3f3.y, vector3f3.z)
+    }
+
+    fun isLookingAt(
+        a: LivingEntity,
+        b: Entity,
+        fov: Float = 15f,
+    ): Boolean {
+        val dx = b.x - a.x
+        val dz = b.z - a.z
+        val angleToB = (Math.toDegrees(Math.atan2(dz, dx)) - 90 + 360) % 360
+        val headYaw = (a.headYaw + 360) % 360
+        val angleDiff = Math.abs(((angleToB - headYaw + 180) % 360) - 180)
+        return angleDiff <= fov
     }
 }

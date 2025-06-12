@@ -1,6 +1,7 @@
 package com.settlement.mod.entity.mob
 
 import com.google.common.collect.ImmutableList
+import com.settlement.mod.LOGGER
 import net.minecraft.entity.player.PlayerEntity
 import net.minecraft.inventory.Inventories
 import net.minecraft.inventory.Inventory
@@ -44,7 +45,7 @@ class VillagerInventory(
 
     fun canInsert(stack: ItemStack): Boolean {
         for (item in main) {
-            if (!item.isEmpty && (!ItemStack.canCombine(item, stack) || item.count >= item.maxCount)) continue
+            if (!item.isEmpty && (!ItemStack.areItemsAndComponentsEqual(item, stack) || item.count >= item.maxCount)) continue
             return true
         }
         return false
@@ -85,10 +86,20 @@ class VillagerInventory(
         return -1
     }
 
+    fun findItem(itemStack: ItemStack): Int {
+        for (i in 0 until main.size) {
+            val stack = this.getStack(i)
+            if (itemStack.item == stack.item) {
+                return i
+            }
+        }
+        return -1
+    }
+
     fun contains(stack: ItemStack): Boolean {
         for (field in merged) {
             for (item in field) {
-                if (item.isEmpty() || !ItemStack.canCombine(item, stack)) continue
+                if (item.isEmpty() || !ItemStack.areItemsAndComponentsEqual(item, stack)) continue
                 return true
             }
         }
@@ -156,10 +167,7 @@ class VillagerInventory(
         }
     }
 
-    // optimize this
-    override fun markDirty() {
-        entity.profession.INVENTORY_HANDLER(entity)
-    }
+    override fun markDirty() {}
 
     private fun addToNewSlot(
         field: DefaultedList<ItemStack>,
@@ -208,7 +216,7 @@ class VillagerInventory(
     ) {
         for (k in 0 until field.size) {
             val itemStack = this.getStack(k)
-            if (!ItemStack.canCombine(itemStack, stack)) continue
+            if (!ItemStack.areItemsAndComponentsEqual(itemStack, stack)) continue
             this.transfer(stack, itemStack)
             if (!stack.isEmpty) continue
             return
@@ -217,29 +225,25 @@ class VillagerInventory(
 
     fun writeNbt(): NbtList {
         val nbtList: NbtList = NbtList()
-        var nbtCompound: NbtCompound
         for (i in this.main.indices) {
             if (this.main[i].isEmpty) continue
-            nbtCompound = NbtCompound()
+            val nbtCompound = NbtCompound()
             nbtCompound.putByte("Slot", i.toByte())
-            this.main[i].writeNbt(nbtCompound)
-            nbtList.add(nbtCompound)
+            nbtList.add(this.main.get(i).toNbt(entity.getRegistryManager(), nbtCompound))
         }
 
         for (i in this.armor.indices) {
             if (this.armor[i].isEmpty) continue
-            nbtCompound = NbtCompound()
+            val nbtCompound = NbtCompound()
             nbtCompound.putByte("Slot", (i + 100).toByte())
-            this.armor[i].writeNbt(nbtCompound)
-            nbtList.add(nbtCompound)
+            nbtList.add(this.armor.get(i).toNbt(entity.getRegistryManager(), nbtCompound))
         }
 
         for (i in this.held.indices) {
             if (this.held[i].isEmpty) continue
-            nbtCompound = NbtCompound()
+            val nbtCompound = NbtCompound()
             nbtCompound.putByte("Slot", (i + 150).toByte())
-            this.held[i].writeNbt(nbtCompound)
-            nbtList.add(nbtCompound)
+            nbtList.add(this.held.get(i).toNbt(entity.getRegistryManager(), nbtCompound))
         }
         return nbtList
     }
@@ -247,10 +251,9 @@ class VillagerInventory(
     fun readNbt(nbtList: NbtList) {
         this.clear()
         for (i in 0 until nbtList.size) {
-            val nbtCompound = nbtList.getCompound(i)
-            val j = nbtCompound.getByte("Slot").toInt() and 0xFF
-            val itemStack = ItemStack.fromNbt(nbtCompound)
-            if (itemStack.isEmpty) continue
+            val nbtCompound = nbtList.getCompoundOrEmpty(i)
+            val j = nbtCompound.getByte("Slot", 0).toInt() and 0xFF
+            val itemStack = ItemStack.fromNbt(entity.getRegistryManager(), nbtCompound).orElse(ItemStack.EMPTY)
             when {
                 j >= 0 && j < this.main.size -> {
                     this.main[j] = itemStack
