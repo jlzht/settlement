@@ -14,13 +14,14 @@ import net.minecraft.util.Identifier
 
 object ModBlockEntities {
     val ENCHANTED_BELL_BLOCK_ENTITY: BlockEntityType<EnchantedBellBlockEntity> =
-        register("charged_bell", ::EnchantedBellBlockEntity, ModBlocks.ENCHANTED_BELL)
+        register("enchanted_bell", ::EnchantedBellBlockEntity, ModBlocks.ENCHANTED_BELL)
 
     val CONTRACT_TABLE_BLOCK_ENTITY: BlockEntityType<ContractTableBlockEntity> =
         register("contract_table", ::ContractTableBlockEntity, ModBlocks.CONTRACT_TABLE)
 
     fun initialize() {
         ENCHANTED_BELL_BLOCK_ENTITY
+        CONTRACT_TABLE_BLOCK_ENTITY
     }
 
     fun initializeClient() {

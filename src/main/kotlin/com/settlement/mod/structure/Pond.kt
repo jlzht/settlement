@@ -2,10 +2,15 @@ package com.settlement.mod.structure
 
 import com.settlement.mod.action.Action
 import com.settlement.mod.action.Errand
+import com.settlement.mod.block.BlockPredicate
 import com.settlement.mod.screen.Response
-import com.settlement.mod.util.BlockIterator
+import com.settlement.mod.util.BlockUtils
 import com.settlement.mod.util.Region
+import com.settlement.mod.util.neighbours
+import com.settlement.mod.world.Settlement
+import net.minecraft.block.BlockState
 import net.minecraft.block.Blocks
+import net.minecraft.block.FluidBlock
 import net.minecraft.entity.player.PlayerEntity
 import net.minecraft.registry.tag.FluidTags
 import net.minecraft.util.math.BlockPos
@@ -15,65 +20,74 @@ class Pond(
     override val region: Region,
 ) : Structure() {
     override val maxCapacity: Int = 1
-    override val volumePerResident: Int = 16
-    override var type: StructureType = StructureType.POND
+    override var type: Structure.Type = Structure.Type.POND
 
-    override val residents: MutableList<Int> = MutableList(maxCapacity) { -1 }
-    
     override fun updateErrands(world: World) {
-        BlockIterator.CUBOID(region.lower, region.upper).let { entries ->
-            entries.shuffled().take(3).forEach { taken ->
-                if (world.getBlockState(taken).isOf(Blocks.WATER)) {
-                    errands.add(Errand(Action.Type.FISH, taken))
+        val expand = if (region.volume() < 32) 1 else 0
+        val available =
+            BlockUtils
+                .cuboid(region.lower.add(-expand, 0, -expand), region.upper.add(expand, 0, expand))
+                .shuffled()
+                .take(3)
+
+        slots.firstOrNull()?.let { slot ->
+            for (pos in available) {
+                getAction(pos, world)?.let {
+                    slot.errands.add(Errand(it, pos))
                 }
             }
         }
-        updateCapacity(region.volume() / volumePerResident)
+        updateCapacity(1)
     }
 
-    override fun getErrands(vid: Int): List<Errand>? {
-        if (!hasErrands()) return null
-        if (!residents.contains(vid)) {
-            emptyList<Errand>()
-        }
-        val taken = errands.take(1)
-        errands.removeAll(taken)
-        return taken
+    override fun getAction(
+        pos: BlockPos,
+        world: World,
+    ): Action.Type? {
+        val state = world.getBlockState(pos)
+        return if (state.isOf(Blocks.WATER)) Action.Type.FISH else null
     }
 
-    companion object {
-        fun createStructure(
+    companion object Factory : Structure.Factory {
+        override fun matches(state: BlockState): Boolean = state.block is FluidBlock
+
+        override fun validate(
+            settlement: Settlement,
+            pos: BlockPos,
+            player: PlayerEntity,
+        ): Boolean =
+            if (!settlement.hasStructureInRange(pos, 8.0f, Structure.Type.POND)) {
+                true
+            } else {
+                Response.ANOTHER_STRUCTURE_INSIDE.send(player)
+                false
+            }
+
+        override fun create(
             pos: BlockPos,
             player: PlayerEntity,
         ): Structure? {
             val world = player.world
             val check =
-                BlockIterator.NEIGHBOURS(pos).all { p ->
+                pos.neighbours().all { p ->
                     world.getFluidState(p).isIn(FluidTags.WATER) && world.getBlockState(p.up()).isAir
                 }
             if (!check) {
-                Response.BLOCKS_MUST_BE_SOLID.send(player)
+                Response.BLOCKS_MUST_BE_WATER.send(player)
                 return null
             }
 
-            BlockIterator.FLOOD_FILL(world, pos, BlockIterator.RIVER_AVAILABLE_SPACE, true, null)?.let { (waterCount, _) ->
-                if (waterCount < 32) {
-                    Response.SMALL_BODY_WATER.send(player)
-                    return null
-                }
-                val region = Region(pos.add(-1, 0, -1), pos.add(1, 0, 1))
-                val pond = Pond(region)
-                Response.NEW_STRUCTURE.send(player, pond.type.name)
-                return pond
-            } ?: run {
-                // flood fill returns null if to many iteration occurs, in this case it means a river was found!
-                val region = Region(pos.add(-1, 0, -1), pos.add(1, 0, 1))
-                val pond = Pond(region)
-                Response.NEW_STRUCTURE.send(player, pond.type.name)
-                return pond
+            val points = BlockUtils.floodFill(world, pos, BlockPredicate.WATER, null)
+            if (points.size < 32) {
+                Response.NOT_ENOUGH_WATER.send(player)
+                return null
             }
-            Response.NOT_ENOUGH_WATER.send(player)
-            return null
+            val region = Region(pos.add(-1, 0, -1), pos.add(1, 0, 1))
+            val pond = Pond(region)
+            Response.NEW_STRUCTURE.send(player, pond.type.name)
+            return pond
         }
+
+        override fun load(region: Region): Structure = Pond(region)
     }
 }

@@ -4,7 +4,7 @@ import com.mojang.brigadier.arguments.BoolArgumentType
 import com.mojang.brigadier.builder.LiteralArgumentBuilder
 import com.mojang.brigadier.builder.RequiredArgumentBuilder
 import com.settlement.mod.network.SettlementDebugDataPacket
-import com.settlement.mod.world.SettlementManager
+import com.settlement.mod.world.SettlementAccessor
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback
 import net.minecraft.server.command.ServerCommandSource
 import net.minecraft.text.Text
@@ -24,7 +24,7 @@ object ModCommands {
                                     .executes { context ->
                                         context.source.player?.let { player ->
                                             val state = BoolArgumentType.getBool(context, "state")
-                                            SettlementManager.findNearestSettlement(player)?.let { settlement ->
+                                            SettlementAccessor.findNearestSettlement(player.world, player.blockPos)?.let { settlement ->
                                                 if (state) {
                                                     SettlementDebugDataPacket.sendToClient(player, settlement.getDebugData())
                                                     context.source.sendMessage(

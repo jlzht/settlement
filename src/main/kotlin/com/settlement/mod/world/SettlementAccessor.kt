@@ -1,16 +1,19 @@
 package com.settlement.mod.world
 
-import com.settlement.mod.LOGGER
 import com.settlement.mod.action.Action
-import com.settlement.mod.entity.mob.AbstractVillagerEntity
+import com.settlement.mod.entity.mob.EntityController
 import com.settlement.mod.entity.mob.ErrandSource
 import com.settlement.mod.entity.mob.Key
-import com.settlement.mod.profession.ProfessionType
-import com.settlement.mod.structure.StructureType
+import com.settlement.mod.profession.Profession
+import com.settlement.mod.structure.Structure
+import net.minecraft.entity.player.PlayerEntity
+import net.minecraft.util.math.BlockPos
+import net.minecraft.world.World
 
+// TODO: add group field for structures
 object SettlementAccessor {
-    val HOUSING = setOf(StructureType.HOUSE)
-    val FREEING = setOf(StructureType.CAMPFIRE)
+    val BUILDING = setOf(Structure.Type.HOUSE, Structure.Type.KITCHEN, Structure.Type.BARRACK)
+    val FREEING = setOf(Structure.Type.CAMPFIRE)
 
     val SOURCE_TO_KEY =
         mapOf(
@@ -19,91 +22,103 @@ object SettlementAccessor {
             ErrandSource.FREE to Key.FREE,
         )
 
-    fun visitSettlement(entity: AbstractVillagerEntity) {
-        SettlementManager.findNearestSettlement(entity)?.let { settlement ->
-            entity.pushErrand(Action.Type.REACH, settlement.pos)
+    @JvmStatic
+    fun createSettlement(
+        name: String,
+        pos: BlockPos,
+        player: PlayerEntity,
+    ) = SettlementManager.createSettlement(name, pos, player)
+
+    fun findSettlementById(id: Int) = SettlementManager.findLoadedSettlementById(id)
+
+    fun findNearestSettlementRef(
+        world: World,
+        pos: BlockPos,
+    ) = SettlementManager.findNearestSettlementRef(world, pos)
+
+    fun findNearestSettlement(
+        world: World,
+        pos: BlockPos,
+    ) = SettlementManager.findNearestLoadedSettlement(world, pos)
+
+    fun visitSettlement(ctrl: EntityController) {
+        SettlementManager.findNearestSettlementRef(ctrl.entity.world, ctrl.entity.blockPos)?.let { ref ->
+            ctrl.pushErrand(Action.Type.REACH, ref.pos)
         }
     }
 
-    fun findSettlementToAttach(entity: AbstractVillagerEntity) {
-        SettlementManager.findNearestSettlement(entity)?.let { settlement ->
-            settlement.addVillager(entity)
+    fun leaveSettlement(ctrl: EntityController) {
+        SettlementManager.findLoadedSettlementById(ctrl.keys[Key.ALOC.ordinal])?.let { settlement ->
+            settlement.removeResident(ctrl.keys[Key.SELF.ordinal])
         }
     }
 
-    fun leaveSettlement(entity: AbstractVillagerEntity) {
-        SettlementManager.findSettlementById(entity.errandManager.getKey(Key.ALOC))?.let { settlement ->
-            val key = entity.errandManager.getKey(Key.SELF)
-            settlement.removeVillager(key)
+    fun findSettlementToAttach(ctrl: EntityController) {
+        SettlementManager.findNearestLoadedSettlement(ctrl.entity.world, ctrl.entity.blockPos)?.let { settlement ->
+            settlement.addResident(ctrl)
         }
     }
 
     fun getStructureToAttach(
-        entity: AbstractVillagerEntity,
-        errandSource: ErrandSource,
+        ctrl: EntityController,
+        source: ErrandSource,
     ) {
-        SettlementManager.findSettlementById(entity.errandManager.getKey(Key.ALOC))?.let { settlement ->
-            val key = SOURCE_TO_KEY[errandSource]!!
-            settlement.getStructure(entity.errandManager.getKey(key))?.let { structure ->
-                if (structure.getResidents().contains(entity.errandManager.getKey(Key.SELF))) {
-                    entity.errandManager.attachProvider(
-                        errandSource,
-                        { key -> structure.getErrands(key) },
-                    )
+        SettlementManager.findLoadedSettlementById(ctrl.keys[Key.ALOC.ordinal])?.let { settlement ->
+            val key = SOURCE_TO_KEY[source]!!
+            settlement.structures[ctrl.keys[key.ordinal]]?.let { structure ->
+                if (structure.slots.any { it.id == ctrl.keys[Key.SELF.ordinal] }) {
+                    ctrl.sources[source.ordinal] = { key -> structure.getErrands(key) }
                 } else {
                     // dettaches if structure updates not keeping villager Key
-                    entity.errandManager.setKey(key, 0)
-                    entity.errandManager.attachProvider(errandSource, null)
+                    ctrl.keys[key.ordinal] = 0
+                    ctrl.sources[source.ordinal] = null
                 }
             } ?: run {
-                // dettaches if structure is deleted 
-                entity.errandManager.setKey(key, 0)
-                entity.errandManager.attachProvider(errandSource, null)
+                // dettaches if structure is deleted
+                ctrl.keys[key.ordinal] = 0
+                ctrl.sources[source.ordinal] = null
             }
         }
     }
 
+    // TODO: if not structure is available, force a delay of villager request
     fun findStructureToAttach(
-        entity: AbstractVillagerEntity,
-        type: StructureType,
+        ctrl: EntityController,
+        type: Structure.Type,
     ) {
-        SettlementManager.findSettlementById(entity.errandManager.getKey(Key.ALOC))?.let { settlement ->
-            // TODO: if not structure is available, force a delay of villager request
-            settlement.getStructureByType(type)?.let { (id, structure) ->
-                // put this somewhere else
-                if (structure.isAvailable()) {
-                    structure.addResident(entity.errandManager.getKey(Key.SELF))
-                    val source =
-                        if (HOUSING.contains(type)) {
-                            ErrandSource.HOME
-                        } else if (FREEING.contains(type)) {
-                            ErrandSource.FREE
-                        } else {
-                            ErrandSource.WORK
-                        }
+        SettlementManager.findLoadedSettlementById(ctrl.keys[Key.ALOC.ordinal])?.let { settlement ->
+            settlement.getStructureBy({ it.type == type && it.isAvailable() })?.let { (id, structure) ->
+                structure.addResident(ctrl.keys[Key.SELF.ordinal])
+                val source =
+                    if (BUILDING.contains(type)) {
+                        ErrandSource.HOME
+                    } else if (FREEING.contains(type)) {
+                        ErrandSource.FREE
+                    } else {
+                        ErrandSource.WORK
+                    }
 
-                    val key = SOURCE_TO_KEY[source]!!
+                val key = SOURCE_TO_KEY[source]!!
 
-                    entity.errandManager.assignProvider(
-                        key,
-                        id,
-                        source,
-                        { i -> structure.getErrands(i) },
-                    )
-                }
+                ctrl.keys[key.ordinal] = id
+                ctrl.sources[source.ordinal] = { i -> structure.getErrands(i) }
             }
+            // TODO: increase interval in Structure Producer
         }
+        // TODO: increase interval in Structure Producer
     }
 
     // defines villager profession based on level of nearest settlement (called once on spawn)
-    fun setProfession(entity: AbstractVillagerEntity) {
-        SettlementManager.findNearestSettlement(entity)?.let { settlement ->
-            val professions = settlement.getProfessionsBySettlementLevel()
-            val profession = professions[entity.random.nextInt(professions.size)]
-            entity.setProfession(profession)
+    fun setProfession(ctrl: EntityController) {
+        SettlementManager.findNearestLoadedSettlement(ctrl.world, ctrl.entity.blockPos)?.let { settlement ->
+            ctrl.professionType =
+                settlement
+                    .availableProfessions()
+                    .shuffled()
+                    .random()
         } ?: run {
-            val base = listOf(ProfessionType.GATHERER, ProfessionType.HUNTER).shuffled()
-            entity.setProfession(base[0])
+            val base = listOf(Profession.Type.GATHERER, Profession.Type.HUNTER).shuffled()
+            ctrl.professionType = base.random()
         }
     }
 }

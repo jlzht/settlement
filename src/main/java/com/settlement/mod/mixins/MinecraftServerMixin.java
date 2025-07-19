@@ -26,8 +26,6 @@ import net.minecraft.server.WorldGenerationProgressListener;
 @Mixin(MinecraftServer.class)
 public abstract class MinecraftServerMixin {
 
-  @Unique private long ticksUntilSettlementsUpdate = 100;
-  // I just forgot about this
   @Redirect(method = "createWorlds", remap = false, at = @At( value = "INVOKE", target = "com/google/common/collect/ImmutableList", ordinal = 0))
   private <T> ImmutableList<SpecialSpawner> coolSpawner(T a, T b, T c, T e, T d) {
       // WanderingTraderManager, CatSpawner and PatrolSpawner will not be needed
@@ -40,11 +38,4 @@ public abstract class MinecraftServerMixin {
       SettlementManager.Companion.setInstance(settlementManager);
   }
 
-  @Inject(method = "tickWorlds", at = @At(value = "INVOKE", target = "Lnet/minecraft/server/MinecraftServer;getWorlds()Ljava/lang/Iterable;", shift = At.Shift.AFTER))
-  private void tickSettlements(BooleanSupplier shouldKeepTicking, CallbackInfo ci) {
-      if (--this.ticksUntilSettlementsUpdate == 0L) {
-          SettlementManager.Companion.tick();
-          ticksUntilSettlementsUpdate = 100;
-      }
-  }
 }

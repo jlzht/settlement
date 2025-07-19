@@ -1,6 +1,7 @@
 package com.settlement.mod.entity
 
 import com.settlement.mod.MODID
+import com.settlement.mod.SettlementConfig
 import com.settlement.mod.client.render.armor.model.StrawHatModel
 import com.settlement.mod.client.render.entity.AbstractVillagerEntityRenderer
 import com.settlement.mod.client.render.entity.SimpleFishingBobberEntityRenderer
@@ -26,7 +27,7 @@ object ModEntities {
             EntityType.Builder
                 .create(::AbstractVillagerEntity, SpawnGroup.CREATURE)
                 .eyeHeight(1.62f)
-                .dimensions(0.6f, 1.95f)
+                .dimensions(0.6f, 1.8f + if (SettlementConfig.useAlternativeModel) 0.0f else 0.15f) // set serverside the height of entity
                 .maxTrackingRange(10),
         )
 
@@ -34,7 +35,7 @@ object ModEntities {
         register(
             "simple_fishing_bobber",
             EntityType.Builder
-                .create({ type, world -> SimpleFishingBobberEntity(type, world, 0, 0) }, SpawnGroup.MISC)
+                .create({ type, world -> SimpleFishingBobberEntity(type, world) }, SpawnGroup.MISC)
                 .dropsNothing()
                 .disableSaving()
                 .disableSummon()
@@ -53,15 +54,30 @@ object ModEntities {
 
         EntityModelLayerRegistry.registerModelLayer(
             AbstractVillagerEntityModel.LAYER,
-            AbstractVillagerEntityModel.Companion::getTexturedModelData,
+            AbstractVillagerEntityModel.Texture::getTexturedModelData,
         )
+
         EntityModelLayerRegistry.registerModelLayer(
             AbstractVillagerEntityModel.ARMOR_INNER,
-            AbstractVillagerEntityModel.Companion::getInnerArmorLayer,
+            AbstractVillagerEntityModel.Texture::getInnerArmorLayer,
         )
         EntityModelLayerRegistry.registerModelLayer(
             AbstractVillagerEntityModel.ARMOR_OUTER,
-            AbstractVillagerEntityModel.Companion::getOuterArmorLayer,
+            AbstractVillagerEntityModel.Texture::getOuterArmorLayer,
+        )
+
+        EntityModelLayerRegistry.registerModelLayer(
+            AbstractVillagerEntityModel.ALT_LAYER,
+            AbstractVillagerEntityModel.Texture::getAltTexturedModelData,
+        )
+
+        EntityModelLayerRegistry.registerModelLayer(
+            AbstractVillagerEntityModel.ALT_ARMOR_INNER,
+            AbstractVillagerEntityModel.Texture::getAltInnerArmorLayer,
+        )
+        EntityModelLayerRegistry.registerModelLayer(
+            AbstractVillagerEntityModel.ALT_ARMOR_OUTER,
+            AbstractVillagerEntityModel.Texture::getAltOuterArmorLayer,
         )
 
         EntityModelLayerRegistry.registerModelLayer(StrawHatModel.LAYER, StrawHatModel.Companion::getTexturedModelData)

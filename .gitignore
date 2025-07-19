@@ -1,0 +1,7 @@
+.gradle/
+kls_database.db
+gradle
+build/
+run/
+# still modeling
+src/main/generated/

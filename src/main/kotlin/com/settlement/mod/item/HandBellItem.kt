@@ -1,10 +1,11 @@
 package com.settlement.mod.item
 
-import net.minecraft.util.Formatting
-import com.settlement.mod.component.ModComponentTypes
+import com.settlement.mod.component.BoundInfo
+import com.settlement.mod.LOGGER
 import com.settlement.mod.block.EnchantedBellBlock
+import com.settlement.mod.component.ModComponentTypes
 import com.settlement.mod.screen.Response
-import com.settlement.mod.world.SettlementManager
+import com.settlement.mod.world.SettlementAccessor
 import net.minecraft.component.type.TooltipDisplayComponent
 import net.minecraft.entity.EquipmentSlot
 import net.minecraft.entity.player.PlayerEntity
@@ -13,6 +14,7 @@ import net.minecraft.item.ItemStack
 import net.minecraft.item.tooltip.TooltipType
 import net.minecraft.text.Text
 import net.minecraft.util.ActionResult
+import net.minecraft.util.Formatting
 import net.minecraft.util.Hand
 import net.minecraft.util.hit.BlockHitResult
 import net.minecraft.util.hit.HitResult
@@ -38,11 +40,9 @@ class HandBellItem(
             val pos: BlockPos = blockHitResult.getBlockPos()
             user.getItemCooldownManager().set(itemStack, 45)
             if (!world.isClient && !(user.world.getBlockState(pos).getBlock() is EnchantedBellBlock)) {
-                itemStack.components.getOrDefault(ModComponentTypes.BOUND_NAME, "").let { name ->
-                    if (!name.equals("")) {
-                        val manager = SettlementManager.getInstance()
-                        val settlements = manager.getSettlements()
-                        settlements.firstOrNull { it.name == name }?.let { settlement ->
+                itemStack.components.getOrDefault(ModComponentTypes.BOUND_INFO, BoundInfo()).let { component ->
+                    if (!component.name.equals("")) {
+                        SettlementAccessor.findSettlementById(component.id)?.let { settlement ->
                             settlement.createStructure(pos, user)
                             itemStack.damage(1, user, EquipmentSlot.MAINHAND)
                         } ?: run {
@@ -58,7 +58,6 @@ class HandBellItem(
                     return ActionResult.SUCCESS
                 }
             }
-            return ActionResult.PASS
         }
         return ActionResult.PASS
     }
@@ -68,17 +67,20 @@ class HandBellItem(
         stack: ItemStack,
         pos: BlockPos,
     ) {
-        val manager = SettlementManager.getInstance()
-        val settlement = manager.getSettlements().find { it.pos == pos }
-
-        if (settlement != null) {
-            stack.components.getOrDefault(ModComponentTypes.BOUND_NAME, "")?.let { bind ->
-                if (!bind.equals("")) {
-                    stack.set(ModComponentTypes.BOUND_NAME, "")
-                    Response.UNBINDED_SETTLEMENT.send(player, settlement.name)
+        SettlementAccessor.findNearestSettlement(player.world, pos)?.let { settlement ->
+            settlement.allies[player.uuid]?.let {
+                if (it >= 20) {
+                    stack.components.getOrDefault(ModComponentTypes.BOUND_INFO, "")?.let { bind ->
+                        if (!bind.equals("")) {
+                            stack.set(ModComponentTypes.BOUND_INFO, BoundInfo())
+                            Response.UNBINDED_SETTLEMENT.send(player, settlement.name)
+                        } else {
+                            stack.set(ModComponentTypes.BOUND_INFO, BoundInfo(settlement.id, settlement.name))
+                            Response.BINDED_TO_SETTLEMENT.send(player, settlement.name)
+                        }
+                    }
                 } else {
-                    stack.set(ModComponentTypes.BOUND_NAME, settlement.name)
-                    Response.BINDED_TO_SETTLEMENT.send(player, settlement.name)
+                    LOGGER.info("Unable to bind, no reputation")
                 }
             }
         }
@@ -91,7 +93,7 @@ class HandBellItem(
         textConsumer: Consumer<Text>,
         type: TooltipType,
     ) {
-        stack.components.get(ModComponentTypes.BOUND_NAME)?.let { bind ->
+        stack.components.get(ModComponentTypes.BOUND_INFO)?.let { bind ->
             textConsumer.accept(Text.literal("Bound to Settlement: $bind").formatted(Formatting.DARK_GRAY))
         }
     }

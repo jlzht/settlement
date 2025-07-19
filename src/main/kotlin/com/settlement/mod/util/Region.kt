@@ -3,12 +3,14 @@ package com.settlement.mod.util
 import com.mojang.serialization.Codec
 import com.mojang.serialization.codecs.RecordCodecBuilder
 import net.minecraft.util.math.BlockPos
+import net.minecraft.util.math.Direction
+import java.util.Optional
 
 data class Region(
     var lower: BlockPos,
     var upper: BlockPos,
+    var point: BlockPos? = null, // used as source for flood-fill of some structures
 ) {
-
     fun append(block: BlockPos) {
         lower =
             BlockPos(
@@ -53,6 +55,23 @@ data class Region(
             point.z >= lower.z &&
             point.z <= upper.z
 
+    fun getDirection(): Direction {
+        val axis = getAxis()
+        val c = center()
+        val origin = point ?: c
+        return when (axis) {
+            Direction.Axis.X -> if (c.x >= origin.x) Direction.EAST else Direction.WEST
+            Direction.Axis.Z -> if (c.z >= origin.z) Direction.SOUTH else Direction.NORTH
+            else -> Direction.NORTH
+        }
+    }
+
+    fun getAxis(): Direction.Axis {
+        val dx = upper.x - lower.x
+        val dz = upper.z - lower.z
+        return if (dx >= dz) Direction.Axis.X else Direction.Axis.Z
+    }
+
     companion object {
         val CODEC: Codec<Region> =
             RecordCodecBuilder.create { instance ->
@@ -60,7 +79,10 @@ data class Region(
                     .group(
                         BlockPos.CODEC.fieldOf("lower").forGetter { it.lower },
                         BlockPos.CODEC.fieldOf("upper").forGetter { it.upper },
-                    ).apply(instance, ::Region)
+                        BlockPos.CODEC.optionalFieldOf("point").forGetter { Optional.ofNullable(it.point) },
+                    ).apply(instance) { lower, upper, pointOpt ->
+                        Region(lower, upper, pointOpt.orElse(null))
+                    }
             }
     }
 }

@@ -13,6 +13,7 @@ import net.minecraft.util.Identifier
 import net.minecraft.util.math.BlockPos
 
 data class StructureDebugData(
+    val type: Int,
     val residents: IntList,
     val capacity: Int,
     val maxCapacity: Int,
@@ -23,7 +24,6 @@ data class StructureDebugData(
 
 data class SettlementDebugData(
     val id: Int,
-    // val data -> name, pos, settlers
     val structures: MutableMap<Int, StructureDebugData>,
 )
 
@@ -49,6 +49,7 @@ data class SettlementDebugDataPacket(
             buf.writeInt(data.id)
             data.structures.forEach { (key, structure) ->
                 buf.writeInt(key)
+                buf.writeInt(structure.type)
                 buf.writeIntList(structure.residents)
                 buf.writeInt(structure.capacity)
                 buf.writeInt(structure.maxCapacity)
@@ -56,7 +57,7 @@ data class SettlementDebugDataPacket(
                 buf.writeBlockPos(structure.upper)
                 buf.writeInt(structure.errands.size)
                 structure.errands.forEach { errand ->
-                    buf.writeInt(errand.cid.ordinal)
+                    buf.writeInt(errand.type.ordinal)
                     buf.writeBlockPos(errand.pos)
                 }
             }
@@ -69,6 +70,7 @@ data class SettlementDebugDataPacket(
             val id = buf.readInt()
             while (buf.isReadable) {
                 val sid = buf.readInt()
+                val type = buf.readInt()
                 val residents = buf.readIntList()
                 val capacity = buf.readInt()
                 val maxCapacity = buf.readInt()
@@ -81,7 +83,7 @@ data class SettlementDebugDataPacket(
                     val pos = buf.readBlockPos()
                     errands.add(Errand(types[cid], pos))
                 }
-                structures[sid] = StructureDebugData(residents, capacity, maxCapacity, lower, upper, errands)
+                structures[sid] = StructureDebugData(type, residents, capacity, maxCapacity, lower, upper, errands)
             }
             return SettlementDebugDataPacket(SettlementDebugData(id, structures))
         }

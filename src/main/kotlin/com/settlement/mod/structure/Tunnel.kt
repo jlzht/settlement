@@ -3,71 +3,88 @@ package com.settlement.mod.structure
 import com.settlement.mod.action.Action
 import com.settlement.mod.action.Errand
 import com.settlement.mod.screen.Response
-import com.settlement.mod.util.BlockIterator
 import com.settlement.mod.util.Region
+import com.settlement.mod.util.around
+import com.settlement.mod.util.neighbours
+import com.settlement.mod.world.Settlement
 import net.minecraft.block.BlockState
+import net.minecraft.block.Blocks
 import net.minecraft.entity.player.PlayerEntity
 import net.minecraft.registry.tag.BlockTags
 import net.minecraft.util.math.BlockPos
 import net.minecraft.world.World
 
-// TODO: add source for start tunnel search
 class Tunnel(
     override val region: Region,
 ) : Structure() {
-    override val maxCapacity: Int = 2
-    override val volumePerResident: Int = 1
-    override var type: StructureType = StructureType.TUNNEL
-    override val residents: MutableList<Int> = MutableList(maxCapacity) { -1 }
-
-    override fun getErrands(vid: Int): List<Errand>? {
-        if (!hasErrands()) return null
-        if (!residents.contains(vid)) {
-            emptyList<Errand>()
-        }
-
-        val taken = errands.take(8)
-        errands.removeAll(taken)
-        return taken
-    }
+    override val maxCapacity: Int = 1
+    override var type: Structure.Type = Structure.Type.TUNNEL
 
     override fun updateErrands(world: World) {
-        BlockIterator.FLOOD_FILL(world, region.lower, BlockIterator.TUNNEL_AVAILABLE_SPACE, false, region)?.let { (_, edges) ->
-            edges
-                .sortedBy { it.getSquaredDistance(region.lower) }
-                .forEach { pos ->
-                    getAction(world.getBlockState(pos))?.let { action ->
-                        errands.add(Errand(action, pos))
+        val pickedErrands = mutableListOf<Errand>()
+        region.point?.let { point ->
+            val axis = region.getAxis()
+            val direction = region.getDirection()
+            outer@ for (i in 0..8) {
+                val base = point.offset(direction, i).around(axis, true)
+                for (pos in base) {
+                    getAction(pos, world)?.let { action ->
+                        pickedErrands.add(Errand(action, pos))
                     }
+                    if (pickedErrands.size >= 16) break@outer
                 }
+            }
+            pickedErrands.sortBy { point.getSquaredDistance(it.pos!!) }
+            extractErrands(pickedErrands, 16)
+            this.updateCapacity(1)
+        } ?: {
+            // mark for removal
         }
-        this.updateCapacity(1)
     }
 
-    private fun getAction(state: BlockState): Action.Type? =
-        when {
+    override fun getAction(
+        pos: BlockPos,
+        world: World,
+    ): Action.Type? {
+        val state = world.getBlockState(pos)
+        return when {
             state.isIn(BlockTags.PICKAXE_MINEABLE) -> Action.Type.MINE
             state.isIn(BlockTags.SHOVEL_MINEABLE) -> Action.Type.DIG
             else -> null
         }
+    }
 
-    companion object {
-        fun createStructure(
+    companion object Factory : Structure.Factory {
+        override fun matches(state: BlockState): Boolean = state.isOf(Blocks.STONE)
+
+        override fun validate(
+            settlement: Settlement,
+            pos: BlockPos,
+            player: PlayerEntity,
+        ): Boolean =
+            if (!settlement.hasStructureNear(pos)) {
+                true
+            } else {
+                Response.ANOTHER_STRUCTURE_INSIDE.send(player)
+                false
+            }
+
+        override fun create(
             pos: BlockPos,
             player: PlayerEntity,
         ): Structure? {
-            val list = listOf(BlockPos(1, 0, 0), BlockPos(0, 0, 1), BlockPos(-1, 0, 0), BlockPos(0, 0, -1))
-            list.minByOrNull { player.squaredDistanceTo(pos.add(it).toCenterPos()) }?.let { p ->
+            pos.neighbours().minBy { player.squaredDistanceTo(pos.add(it).toCenterPos()) }.let { p ->
                 val s = pos.add(-p.getX() * 8, 0, -p.getZ() * 8)
-                val z = pos.add(p.getZ(), -1, p.getX())
-                val n = pos.add(-p.getZ(), 1, -p.getX())
-                val region = Region(z, n)
+                val l = pos.add(p.getZ(), -1, p.getX())
+                val u = pos.add(-p.getZ(), 1, -p.getX())
+                val region = Region(l, u, pos)
                 region.append(s)
                 val tunnel = Tunnel(region)
                 Response.NEW_STRUCTURE.send(player, tunnel.type.name)
                 return tunnel
             }
-            return null
         }
+
+        override fun load(region: Region): Structure = Tunnel(region)
     }
 }

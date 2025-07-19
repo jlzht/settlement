@@ -25,7 +25,7 @@ object ModItems {
 
     val WHEAT_HAT =
         register(
-            "wheat_hat",
+            "straw_hat",
             ::Item,
             Item.Settings().armor(ModArmorMaterials.WHEAT, EquipmentType.HELMET),
         )

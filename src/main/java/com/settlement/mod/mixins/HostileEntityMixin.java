@@ -40,12 +40,13 @@ import com.mojang.logging.LogUtils;
         VindicatorEntity.class,
         WitchEntity.class
 })
-public abstract class ZombieEntityMixin extends HostileEntity {
-        protected ZombieEntityMixin(EntityType<? extends ZombieEntity> entityType, World world) {
-                super(entityType, world);
-        }
-        @Inject(method = "initGoals", at = @At("TAIL"))
-	      private void initGoals(CallbackInfo info) {
-          this.targetSelector.add(3, new ActiveTargetGoal<AbstractVillagerEntity>(this, AbstractVillagerEntity.class, true));
-        }
+public abstract class HostileEntityMixin extends HostileEntity {
+    protected HostileEntityMixin(EntityType<? extends HostileEntity> entityType, World world) {
+        super(entityType, world);
+    }
+
+    @Inject(method = "initGoals", at = @At("TAIL"))
+    private void addVillagerTargetGoal(CallbackInfo info) {
+        this.targetSelector.add(3, new ActiveTargetGoal<>(this, AbstractVillagerEntity.class, true));
+    }
 }

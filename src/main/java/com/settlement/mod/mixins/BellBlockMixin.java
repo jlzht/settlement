@@ -1,7 +1,7 @@
 package com.settlement.mod.mixin;
 
 import java.util.List;
-import com.settlement.mod.world.SettlementManager;
+import com.settlement.mod.world.SettlementAccessor;
 import com.settlement.mod.world.Settlement;
 import com.settlement.mod.item.ModItems;
 import com.settlement.mod.screen.Response;
@@ -15,6 +15,7 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
+import net.minecraft.block.entity.BlockEntity;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
 import net.minecraft.world.World;
@@ -25,8 +26,10 @@ import net.minecraft.block.BlockState;
 import net.minecraft.entity.player.PlayerEntity;
 import org.jetbrains.annotations.Nullable;
 import net.minecraft.util.ActionResult;
+import com.settlement.mod.world.Settlement;
 import com.settlement.mod.item.HandBellItem;
 import com.settlement.mod.block.ModBlocks;
+import com.settlement.mod.block.entity.EnchantedBellBlockEntity;
 import org.slf4j.LoggerFactory;
 import org.slf4j.Logger;
 
@@ -37,10 +40,14 @@ public abstract class BellBlockMixin {
         if (player != null) {
             ItemStack itemStack = player.getMainHandStack();
             if (itemStack.isOf(Items.NAME_TAG) && itemStack.getCustomName() != null) {
-                Settlement settlement = SettlementManager.Companion.getInstance().addSettlement(itemStack.getName().getString(), hitResult.getBlockPos(), player);
-                if (settlement != null) {
-                    world.setBlockState(hitResult.getBlockPos(), ModBlocks.ENCHANTED_BELL.getDefaultState(), Block.NOTIFY_ALL);
+                if (!player.isCreative()) {
                     itemStack.decrement(1);
+                }
+                world.setBlockState(hitResult.getBlockPos(), ModBlocks.ENCHANTED_BELL.getDefaultState(), Block.NOTIFY_ALL);
+                BlockEntity blockEntity = world.getBlockEntity(hitResult.getBlockPos());
+                Settlement settlement = SettlementAccessor.INSTANCE.createSettlement(itemStack.getName().getString(), hitResult.getBlockPos(), player);
+                if (blockEntity instanceof EnchantedBellBlockEntity enchantedBell) {
+                    enchantedBell.bindSettlement(settlement);
                 } else {
                     cir.cancel();
                 }

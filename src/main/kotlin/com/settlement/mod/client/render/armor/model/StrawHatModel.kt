@@ -18,6 +18,12 @@ import net.minecraft.util.Identifier
 class StrawHatModel<T : EntityRenderState>(
     root: ModelPart,
 ) : EntityModel<T>(root) {
+    private val hat: ModelPart = root.getChild("main")
+
+    fun copyHeadTransform(head: ModelPart) {
+        hat.copyTransform(head)
+    }
+
     companion object {
         val LAYER = EntityModelLayer(Identifier.of(MODID, "straw_hat"), "main")
 

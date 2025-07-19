@@ -1,80 +1,103 @@
 package com.settlement.mod.structure
 
-import com.settlement.mod.LOGGER
 import com.settlement.mod.action.Action
 import com.settlement.mod.action.Errand
+import com.settlement.mod.block.BlockPredicate
 import com.settlement.mod.screen.Response
+import com.settlement.mod.util.BlockUtils
 import com.settlement.mod.util.Region
+import com.settlement.mod.world.Settlement
 import net.minecraft.block.BlockState
 import net.minecraft.entity.player.PlayerEntity
 import net.minecraft.registry.tag.BlockTags
 import net.minecraft.util.math.BlockPos
 import net.minecraft.world.World
 
-// TODO: give a purpose to this structure
+// TODO: add pathing logic to break leaves in the way
 class Tree(
-    val lower: BlockPos,
-    val upper: BlockPos,
+    override val region: Region,
 ) : Structure() {
     override val maxCapacity: Int = 1
-    override val volumePerResident: Int = 1
-    override var type: StructureType = StructureType.TREE
-    override var region: Region = Region(lower, upper)
-    override val residents: MutableList<Int> = MutableList(maxCapacity) { -1 }
- 
-    override fun getErrands(vid: Int): List<Errand>? {
-        if (!hasErrands()) return null
-        if (!residents.contains(vid)) return emptyList<Errand>()
-        return errands
-    }
+    override var type: Structure.Type = Structure.Type.TREE
 
-    // if size is bigger than N, indicates that tree is not uniform, so tree should not be chopped
     override fun updateErrands(world: World) {
-        var pos = region.center()
-        LOGGER.info("{}", pos)
-        var hasNextLog = true
-        while (hasNextLog) {
-            getAction(world.getBlockState(pos))?.let { action ->
-                errands.add(Errand(action, pos))
-                if (!region.contains(pos)) {
-                    region.append(pos)
-                    var i = 1
+        val pickedErrands = mutableListOf<Errand>()
 
-                    val temp = mutableListOf<Errand>()
-                    while (world.getBlockState(pos.add(i, 0, 0)).isIn(BlockTags.LEAVES) &&
-                        !world.getBlockState(pos.add(i, -1, 0)).isSolid
-                    ) {
-                        temp.add(Errand(Action.Type.BREAK, pos.add(i, 0, 0)))
-                        i++
-                    }
-                    for (errand in temp.asReversed()) {
-                        errands.add(errand)
-                    }
-                }
-                pos = pos.add(0, 1, 0)
-            } ?: run {
-                hasNextLog = false
+        BlockUtils.cuboid(region.lower, region.upper).forEach { pos ->
+            getAction(pos, world)?.let { action ->
+                pickedErrands += Errand(action, pos)
+
+                val breakErrands =
+                    generateSequence(1) { it + 1 }
+                        .takeWhile { i ->
+                            world.getBlockState(pos.add(i, 1, 0)).isIn(BlockTags.LEAVES) &&
+                                !world.getBlockState(pos.add(i, -1, 0)).isSolid
+                        }.map { i -> Errand(Action.Type.BREAK, pos.add(i, 0, 0)) }
+                        .toList()
+                        .asReversed()
+
+                pickedErrands += breakErrands
             }
         }
+
+        if (pickedErrands.isEmpty() || pickedErrands.count() >= 8) {
+            markRemoval = true
+            return
+        }
+
+        slots.firstNotNullOf {
+            pickedErrands.forEach { errand ->
+                it.errands.add(errand)
+            }
+        }
+
         this.updateCapacity(1)
     }
 
-    private fun getAction(state: BlockState): Action.Type? =
-        when {
+    override fun getAction(
+        pos: BlockPos,
+        world: World,
+    ): Action.Type? {
+        val state = world.getBlockState(pos)
+        return when {
             state.isIn(BlockTags.LOGS_THAT_BURN) -> Action.Type.CHOP
             else -> null
         }
+    }
 
-    companion object {
-        fun createStructure(
+    companion object Factory : Structure.Factory {
+        override fun matches(state: BlockState): Boolean = state.isIn(BlockTags.LOGS_THAT_BURN)
+
+        override fun validate(
+            settlement: Settlement,
+            pos: BlockPos,
+            player: PlayerEntity,
+        ): Boolean =
+            if (!settlement.hasStructureNear(pos)) {
+                true
+            } else {
+                Response.ANOTHER_STRUCTURE_INSIDE.send(player)
+                false
+            }
+
+        override fun create(
             pos: BlockPos,
             player: PlayerEntity,
         ): Structure? {
-            val world = player.world
-            // TODO: think of fail cases
-            val tree = Tree(pos, pos)
+            val points = BlockUtils.floodFill(player.world, pos, BlockPredicate.LOG, null)
+            if (points.size >= 6) {
+                Response.TREE_IS_TOO_BIG.send(player)
+                return null
+            }
+            val region = Region(pos, pos)
+            points.forEach { point ->
+                region.append(point)
+            }
+            val tree = Tree(region)
             Response.NEW_STRUCTURE.send(player, tree.type.name)
             return tree
         }
+
+        override fun load(region: Region): Structure = Tree(region)
     }
 }

@@ -23,7 +23,7 @@ class StrawHatRenderer : ArmorRenderer {
         matrices: MatrixStack,
         vertexConsumers: VertexConsumerProvider,
         stack: ItemStack,
-        entity: BipedEntityRenderState,
+        state: BipedEntityRenderState,
         slot: EquipmentSlot,
         light: Int,
         contextModel: BipedEntityModel<BipedEntityRenderState>,
@@ -41,7 +41,7 @@ class StrawHatRenderer : ArmorRenderer {
             matrices.multiply(RotationAxis.POSITIVE_Y.rotation(head.yaw))
             matrices.multiply(RotationAxis.POSITIVE_X.rotation(head.pitch))
             matrices.translate(-head.originX / 16.0f, -head.originY / 16.0f, -head.originZ / 16.0f)
-            if (entity.sneaking) {
+            if (state.isInSneakingPose) {
                 matrices.translate(0.0, -1.65, 0.0)
             } else {
                 matrices.translate(0.0, -1.95, 0.0)

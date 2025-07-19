@@ -16,7 +16,7 @@ object ModBlocks {
     @JvmField
     val ENCHANTED_BELL =
         register(
-            "charged_bell",
+            "enchanted_bell",
             { settings -> EnchantedBellBlock(settings) },
             AbstractBlock.Settings
                 .create()

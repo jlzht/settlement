@@ -16,7 +16,8 @@
 	"environment": "*",
 	"entrypoints": {
 		"main": [{"adapter": "kotlin", "value": "com.settlement.mod.Settlement"}],
-		"client": [{"adapter": "kotlin", "value": "com.settlement.mod.SettlementClient"}]
+		"client": [{"adapter": "kotlin", "value": "com.settlement.mod.SettlementClient"}],
+		"fabric-datagen": [{"adapter": "kotlin", "value": "com.settlement.mod.SettlementDataGenerator"}]
 	},
 	"mixins": [
 		"settlement.mixins.json"

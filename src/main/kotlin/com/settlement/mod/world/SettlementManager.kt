@@ -1,86 +1,88 @@
 package com.settlement.mod.world
 
+import com.settlement.mod.LOGGER
 import com.mojang.serialization.Codec
 import com.mojang.serialization.codecs.RecordCodecBuilder
 import com.settlement.mod.screen.Response
-import com.settlement.mod.MODID
-import net.minecraft.datafixer.DataFixTypes
-import net.minecraft.entity.LivingEntity
 import net.minecraft.entity.player.PlayerEntity
 import net.minecraft.registry.entry.RegistryEntry
 import net.minecraft.server.world.ServerWorld
 import net.minecraft.util.math.BlockPos
 import net.minecraft.world.PersistentState
 import net.minecraft.world.PersistentStateType
+import net.minecraft.world.World
 import net.minecraft.world.dimension.DimensionType
 import net.minecraft.world.dimension.DimensionTypes
 
-// I want to structure Settlements in any dimension into a graph
-class SettlementManager : PersistentState() {
-    private val settlements = mutableListOf<Settlement>()
-
-    init {
-        this.markDirty()
+data class SettlementRef(
+    val id: Int,
+    val pos: BlockPos,
+    val dim: Byte,
+) {
+    companion object {
+        val CODEC: Codec<SettlementRef> =
+            RecordCodecBuilder.create { instance ->
+                instance
+                    .group(
+                        Codec.INT.fieldOf("id").forGetter(SettlementRef::id),
+                        BlockPos.CODEC.fieldOf("pos").forGetter(SettlementRef::pos),
+                        Codec.BYTE.fieldOf("dim").forGetter(SettlementRef::dim),
+                    ).apply(instance, ::SettlementRef)
+            }
     }
+}
 
-    fun addSettlement(
+class SettlementManager : PersistentState() {
+    private val settlements = mutableMapOf<SettlementRef, Settlement?>()
+
+    fun createSettlement(
         name: String,
         pos: BlockPos,
         player: PlayerEntity,
     ): Settlement? {
-        val id = Settlement.getAvailableKey(settlements.map { it.id })
-        val entry = player.world.getDimensionEntry()
+        val dim = getDimensionString(player.world.dimensionEntry) ?: return null
 
-        getDimensionString(entry)?.let { dim ->
-            for (settlement in settlements) {
-                if (settlement.name == name) {
-                    Response.ANOTHER_SETTLEMENT_HAS_NAME.send(player).also { return null }
-                }
-                if (settlement.dim == dim) {
-                    if (settlement.pos == pos) {
-                        Response.PLACE_IS_SETTLEMENT_ALREADY.send(player).also { return null }
-                    }
-                    if (settlement.pos.getSquaredDistance(pos.toCenterPos()) < 16384.0f) {
-                        Response.ANOTHER_SETTLEMENT_NEARBY.send(player).also { return null }
-                    }
-                }
-            }
+        // val loadedSettlements = getLoadedSettlements()
+        // if (loadedSettlements.any { it.name == name }) {
+        //     Response.ANOTHER_SETTLEMENT_HAS_NAME.send(player)
+        //     return null
+        // }
 
-            Settlement(id, name, pos, dim).let {
-                settlements.add(it)
-                // it.allies[player.getUuid()] = 50
-                Response.NEW_SETTLEMENT.send(player, name)
-                return it
+        if (settlements.keys.any { it.dim == dim && it.pos.getSquaredDistance(pos.toCenterPos()) < 16384.0 }) {
+            Response.ANOTHER_SETTLEMENT_NEARBY.send(player)
+            return null
+        }
+
+        val id = Settlement.getAvailableKey(settlements.keys.map { it.id })
+        val settlement =
+            Settlement(id, name, pos, dim).apply {
+                addAlly(player.uuid)
+                adjustReputation(player.uuid, 20)
             }
-        } ?: run { return null } // notifies player about invalid dimension
+        val ref = SettlementRef(id, pos, dim)
+
+        settlements[ref] = settlement
+        markDirty()
+
+        Response.NEW_SETTLEMENT.send(player, name)
+        return settlement
     }
 
-    fun removeSettlement(settlement: Settlement) {
-        settlements.remove(settlement)
+    fun removeSettlement(ref: SettlementRef) {
+        if (settlements.remove(ref) != null) {
+            markDirty()
+        }
     }
 
-    fun getSettlements(): MutableList<Settlement> = settlements
+    fun getLoadedSettlements(): List<Settlement> = settlements.values.filterNotNull()
 
-    fun findSettlement(id: Int): Settlement? = settlements.find { it.id == id }
+    fun findLoadedSettlement(id: Int): Settlement? = settlements.values.find { it?.id == id }
+
+    fun findSettlementRef(id: Int): SettlementRef? = settlements.keys.find { it.id == id }
 
     fun clearSettlements() {
         settlements.clear()
-    }
-
-    // TODO: find strategies for skiping settlement ticking
-    fun tick() {
-        settlements.forEach { settlement ->
-            SettlementManager.getWorld(settlement.dim)?.let { world ->
-                if (world.isChunkLoaded(settlement.pos)) {
-                    settlement.structures.forEach { structure ->
-                        if (!structure.value.hasErrands()) {
-                            structure.value.updateErrands(world)
-                            this.markDirty()
-                        }
-                    }
-                }
-            }
-        }
+        markDirty()
     }
 
     companion object {
@@ -88,13 +90,13 @@ class SettlementManager : PersistentState() {
             RecordCodecBuilder.create { instance ->
                 instance
                     .group(
-                        Codec
-                            .list(Settlement.CODEC)
-                            .fieldOf("settlements")
-                            .forGetter { it.getSettlements() },
-                    ).apply(instance) { settlements ->
+                        SettlementRef.CODEC
+                            .listOf()
+                            .fieldOf("settlement_refs")
+                            .forGetter { it.settlements.keys.toList() },
+                    ).apply(instance) { refs ->
                         SettlementManager().apply {
-                            this.getSettlements().addAll(settlements)
+                            refs.forEach { ref -> this.settlements[ref] = null }
                         }
                     }
             }
@@ -111,7 +113,6 @@ class SettlementManager : PersistentState() {
 
         fun getInstance() = instance
 
-        // easy access to dimensions
         private val worlds = mutableMapOf<Byte, ServerWorld>()
 
         fun getWorld(id: Byte) = worlds[id]
@@ -127,28 +128,56 @@ class SettlementManager : PersistentState() {
             }
         }
 
-        fun tick() {
-            instance.tick()
-        }
-
-        fun getDimensionString(entry: RegistryEntry<DimensionType>): Byte? {
-            return when {
-                entry.matchesKey(DimensionTypes.OVERWORLD) -> 0
-                entry.matchesKey(DimensionTypes.THE_NETHER) -> 1
-                entry.matchesKey(DimensionTypes.THE_END) -> 2
-                else -> return null
+        fun loadSettlement(settlement: Settlement) {
+            LOGGER.info("Loading settlement: {}", settlement.name)
+            val ref = instance.findSettlementRef(settlement.id)
+            if (ref != null) {
+                instance.settlements[ref] = settlement
             }
         }
 
-        fun findNearestSettlement(entity: LivingEntity): Settlement? {
-            val dim = getDimensionString(entity.world.getDimensionEntry())
-            return getInstance()
-                .getSettlements()
-                .filter { it.dim == dim }
-                .filter { it.pos.getSquaredDistance(entity.pos) < 16384.0 }
-                .minByOrNull { it.pos.getSquaredDistance(entity.pos) }
+        fun unloadSettlement(settlementId: Int) {
+            val ref = instance.findSettlementRef(settlementId)
+            if (ref != null) {
+                LOGGER.info("Loading settlement: {}", instance.settlements[ref]?.name)
+                instance.settlements[ref] = null
+            }
         }
 
-        fun findSettlementById(sid: Int): Settlement? = getInstance().findSettlement(sid)
+        fun findNearestLoadedSettlement(
+            world: World,
+            pos: BlockPos,
+        ): Settlement? {
+            val nearest = findNearestSettlementRef(world, pos)
+            return nearest?.let { ref -> findLoadedSettlementById(ref.id) }
+        }
+
+        fun findNearestSettlementRef(
+            world: World,
+            pos: BlockPos,
+        ): SettlementRef? {
+            val dim = getDimensionString(world.dimensionEntry)
+            return getInstance()
+                .settlements.keys
+                .filter { it.dim == dim }
+                .filter { it.pos.getSquaredDistance(pos) < 16384.0 }
+                .minByOrNull { it.pos.getSquaredDistance(pos) }
+        }
+
+        fun findLoadedSettlementById(sid: Int): Settlement? = getInstance().findLoadedSettlement(sid)
+
+        fun createSettlement(
+            name: String,
+            pos: BlockPos,
+            player: PlayerEntity,
+        ): Settlement? = getInstance().createSettlement(name, pos, player)
+
+        fun getDimensionString(entry: RegistryEntry<DimensionType>): Byte? =
+            when {
+                entry.matchesKey(DimensionTypes.OVERWORLD) -> 0
+                entry.matchesKey(DimensionTypes.THE_NETHER) -> 1
+                entry.matchesKey(DimensionTypes.THE_END) -> 2
+                else -> null
+            }
     }
 }

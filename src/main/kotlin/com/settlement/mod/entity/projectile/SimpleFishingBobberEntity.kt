@@ -1,5 +1,6 @@
 package com.settlement.mod.entity.projectile
 
+import com.settlement.mod.data.ModLootTables
 import com.settlement.mod.entity.ModEntities
 import com.settlement.mod.entity.mob.AbstractVillagerEntity
 import net.minecraft.entity.Entity
@@ -10,8 +11,6 @@ import net.minecraft.entity.data.DataTracker
 import net.minecraft.entity.projectile.ProjectileEntity
 import net.minecraft.entity.projectile.ProjectileUtil
 import net.minecraft.fluid.FluidState
-import net.minecraft.loot.LootTables
-import net.minecraft.loot.context.LootContextParameters
 import net.minecraft.loot.context.LootContextTypes
 import net.minecraft.loot.context.LootWorldContext
 import net.minecraft.nbt.NbtCompound
@@ -30,54 +29,77 @@ import net.minecraft.util.math.Vec3d
 import net.minecraft.util.math.random.Random
 import net.minecraft.world.World
 
-// TODO:
-//  - pass errand pos in order for bobber to reach point
-//  - tweak item drops
+// TODO: add persistant bobber
 class SimpleFishingBobberEntity(
     type: EntityType<out SimpleFishingBobberEntity>,
     world: World,
-    luckOfTheSeaLevel: Int,
-    lureLevel: Int,
 ) : ProjectileEntity(type, world) {
     private val velocityRandom: Random = Random.create()
+
     private var state: BobberState = BobberState.FLYING
-    private var luckOfTheSeaLevel: Int = 0
-    private var lureLevel: Int = 0
     private var removalTimer: Int = 0
     private var hookCountdown: Int = 0
     private var fishingTicks: Int = 0
 
-    init {
-        this.luckOfTheSeaLevel = maxOf(0, luckOfTheSeaLevel)
-        this.lureLevel = maxOf(0, lureLevel)
-    }
+    var isClosed = false
+    lateinit var condition: () -> Boolean
 
-    constructor(thrower: AbstractVillagerEntity, world: World, luckOfTheSeaLevel: Int, lureLevel: Int) : this(
+    @JvmName("setupLambda")
+    fun setCondition(condition: () -> Boolean) {
+        this.condition = condition
+    }
+    constructor(thrower: AbstractVillagerEntity, pos: BlockPos, world: World) : this(
         ModEntities.SIMPLE_FISHING_BOBBER,
         world,
-        luckOfTheSeaLevel,
-        lureLevel,
     ) {
         this.setOwner(thrower)
-        val f: Float = thrower.getPitch()
-        val g: Float = thrower.headYaw
-        val h: Float = MathHelper.cos(-g * (Math.PI.toFloat() / 180) - Math.PI.toFloat())
-        val i: Float = MathHelper.sin(-g * (Math.PI.toFloat() / 180) - Math.PI.toFloat())
-        val j: Float = -MathHelper.cos(-f * (Math.PI.toFloat() / 180))
-        val k: Float = MathHelper.sin(-f * (Math.PI.toFloat() / 180))
-        val d: Double = thrower.x - i * 0.3
-        val e: Double = thrower.eyeY
-        val l: Double = thrower.z - h * 0.3
-        this.refreshPositionAndAngles(d, e, l, g, f)
-        var vec3d: Vec3d = Vec3d(-i.toDouble(), MathHelper.clamp(-(k / j).toDouble(), -5.0, 5.0), -h.toDouble())
-        var m: Double = vec3d.length()
-        vec3d =
-            vec3d.multiply(
-                0.5 / m + this.velocityRandom.nextTriangular(0.5, 0.0103365),
-                0.5 / m + this.velocityRandom.nextTriangular(0.5, 0.0103365),
-                0.5 / m + this.velocityRandom.nextTriangular(0.5, 0.0103365),
-            )
-        this.velocity = vec3d
+        val start = thrower.eyePos.subtract(thrower.rotationVector.multiply(0.3))
+        this.refreshPositionAndAngles(start.x, start.y, start.z, thrower.yaw, thrower.pitch)
+        val target = Vec3d.ofCenter(pos)
+
+        val dx = target.x - start.x
+        val dy = target.y - start.y
+        val dz = target.z - start.z
+        val d = Math.sqrt(dx * dx + dz * dz)
+        if (d == 0.0) {
+            setVelocity(0.0, 1.0, 0.0)
+            return
+        }
+
+        val angle = Math.toRadians(55.0)
+        val cos = Math.cos(angle)
+        val sin = Math.sin(angle)
+        val g = 0.03
+        val denom = 2 * cos * cos * (d * Math.tan(angle) - dy)
+        if (denom <= 0) {
+            setVelocity(dx / d * 0.5, 0.5, dz / d * 0.5)
+            return
+        }
+
+        val maxDist = 16.0
+        val minFactor = 1.0
+        val maxFactor = 4.0
+
+        val t = (d / maxDist).coerceIn(0.0, 1.0)
+
+        val distFactor = minFactor + t * (maxFactor - minFactor)
+
+        val v0 = Math.sqrt(d * d * g / denom)
+
+        val vy = v0 * sin
+
+        val vh = Math.sqrt(v0 * v0 - vy * vy) * distFactor
+
+        val horizontalDir = Vec3d(dx, 0.0, dz).normalize()
+
+        val vx = horizontalDir.x * vh.toDouble()
+        val vz = horizontalDir.z * vh.toDouble()
+
+        val rnd = velocityRandom
+
+        fun spread(v: Double) = v + rnd.nextTriangular(0.0, 0.0075)
+
+        setVelocity(spread(vx), spread(vy), spread(vz))
     }
 
     override fun setOwner(entity: Entity?) {
@@ -91,32 +113,28 @@ class SimpleFishingBobberEntity(
     override fun tick() {
         super.tick()
         if (fishingTicks >= 300) {
-            this.getOwner()?.let { entity ->
-                entity as AbstractVillagerEntity
-                val world = entity.world
-                val stack = entity.getStackInHand(Hand.MAIN_HAND)
-                if (!entity.world.isClient) {
-                    val lootWorldContext =
-                        LootWorldContext
-                            .Builder(this.getWorld() as ServerWorld)
-                            .add(LootContextParameters.ORIGIN, this.pos)
-                            .add(LootContextParameters.TOOL, stack)
-                            .add(LootContextParameters.THIS_ENTITY, this)
-                            // .luck(luckOfTheSeaLevel.toFloat() + entity.luck.toFloat())
-                            .build(LootContextTypes.FISHING)
-                    world.getServer()?.let { server ->
-                        val loot = server.getReloadableRegistries().getLootTable(LootTables.FISHING_GAMEPLAY)
-                        val lootList = loot.generateLoot(lootWorldContext)
-                        for (itemStack in lootList) {
-                            val itemEntity = ItemEntity(world, this.x, this.y, this.z, itemStack)
-                            val d = entity.x - this.x
-                            val e = entity.y - this.y
-                            val f = entity.z - this.z
-                            val g = 0.1
-                            itemEntity.setVelocity(d * g, e * g + Math.sqrt(Math.sqrt(d * d + e * e + f * f)) * 0.08, f * g)
-                            world.spawnEntity(itemEntity)
+            (this.getOwner() as? AbstractVillagerEntity)?.let { entity ->
+                entity.world.let { world ->
+                    if (!world.isClient) {
+                        val stack = entity.getStackInHand(Hand.MAIN_HAND)
+                        world.getServer()?.let { server ->
+                            val parameterSet =
+                                LootWorldContext
+                                    .Builder(world as ServerWorld)
+                                    .build(LootContextTypes.EMPTY)
+
+                            val lootTable = server.reloadableRegistries.getLootTable(ModLootTables.FISHERMAN)
+                            lootTable.generateLoot(parameterSet).forEach {
+                                val itemEntity = ItemEntity(world, this.x, this.y, this.z, it)
+                                val d = entity.x - this.x
+                                val e = entity.y - this.y
+                                val f = entity.z - this.z
+                                val g = 0.1
+                                itemEntity.setVelocity(d * g, e * g + Math.sqrt(Math.sqrt(d * d + e * e + f * f)) * 0.08, f * g)
+                                world.spawnEntity(itemEntity)
+                            }
+                            this.discard()
                         }
-                        this.discard()
                     }
                 }
             }
@@ -127,11 +145,12 @@ class SimpleFishingBobberEntity(
             remove(RemovalReason.DISCARDED)
             return
         } else {
-            if (owner is AbstractVillagerEntity && !owner.world.isClient && !owner.isWorking()) {
+            if (!owner.world.isClient && owner is AbstractVillagerEntity && condition.invoke()) {
                 this.discard()
                 return
             }
         }
+
         if (isOnGround) {
             removalTimer++
             if (removalTimer >= 50) {
@@ -141,15 +160,15 @@ class SimpleFishingBobberEntity(
         } else {
             removalTimer = 0
         }
+
         var f = 0.0f
-        val blockPos: BlockPos = blockPos
         val fluidState: FluidState = world.getFluidState(blockPos)
         if (fluidState.isIn(FluidTags.WATER)) {
             f = fluidState.getHeight(world, blockPos)
         }
-        val bl: Boolean = f > 0.0f
+
         if (state == BobberState.FLYING) {
-            if (bl) {
+            if (f > 0.0f) {
                 velocity = velocity.multiply(0.15, 0.2, 0.15)
                 state = BobberState.BOBBING
                 return
@@ -202,7 +221,9 @@ class SimpleFishingBobberEntity(
     override fun remove(reason: Entity.RemovalReason?) {
         this.getOwner()?.let { owner ->
             owner as AbstractVillagerEntity
-            if (owner.isAlive) owner.setWorking(false)
+            if (owner.isAlive) {
+                isClosed = true
+            }
         }
         super.remove(reason)
     }

@@ -20,10 +20,8 @@ class TradingScreen : HandledScreen<TradingScreenHandler> {
     constructor(handler: TradingScreenHandler, inventory: PlayerInventory, title: Text) : super(handler, inventory, title)
 
     val TEXTURE = Identifier.of(MODID, "textures/gui/villager.png")
-    private var toggleTradeOption: ButtonWidget? = null
-    private var toggleStatus: Boolean = false
-    private var locks: Array<LockButton?> = arrayOfNulls<LockButton>(3)
-    private var option: OptionButton? = null
+    private val locks: Array<LockButton?> = arrayOfNulls<LockButton>(3)
+    private lateinit var option: OptionButton
 
     override fun init() {
         var x: Int = (this.width - this.backgroundWidth) / 2
@@ -42,7 +40,9 @@ class TradingScreen : HandledScreen<TradingScreenHandler> {
         i: Int,
         j: Int,
     ) {
-        context.drawTexture(RenderLayer::getGuiTextured, TEXTURE, (i + 74), (j + 40), 176.0f, 21.0f, 28, 21, 256, 256)
+        if (!option.isSelling()) {
+            context.drawTexture(RenderLayer::getGuiTextured, TEXTURE, (i + 74), (j + 40), 176.0f, 21.0f, 28, 21, 256, 256)
+        }
     }
 
     override fun drawForeground(
@@ -90,13 +90,7 @@ class TradingScreen : HandledScreen<TradingScreenHandler> {
     ) : PressableWidget(x, y, 52, 8, ScreenTexts.EMPTY) {
         private var selling: Boolean = false
 
-        init {
-            this.selling = false
-        }
-
         public fun getTexture(): Identifier = this.texture
-
-        public fun isSelling(): Boolean = this.selling
 
         override fun renderWidget(
             context: DrawContext,
@@ -113,12 +107,12 @@ class TradingScreen : HandledScreen<TradingScreenHandler> {
         }
 
         override fun onPress() {
-            toggleOperation()
+            toggleSelling()
         }
 
-        public fun getOperation(): Boolean = this.selling
+        fun isSelling(): Boolean = this.selling
 
-        public fun toggleOperation() {
+        fun toggleSelling() {
             this.selling = !selling
         }
 

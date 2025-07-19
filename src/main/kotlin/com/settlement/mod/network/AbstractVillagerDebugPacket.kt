@@ -24,8 +24,8 @@ data class VillagerDebugPacket(
 
         val CODEC: PacketCodec<RegistryByteBuf, VillagerDebugPacket> =
             PacketCodec.of(
-                { packet, buf -> encode(packet, buf) },
-                { buf -> decode(buf) },
+                VillagerDebugPacket::encode,
+                VillagerDebugPacket::decode
             )
 
         private fun encode(
@@ -51,5 +51,30 @@ data class VillagerDebugPacket(
         ) {
             ServerPlayNetworking.send(player, VillagerDebugPacket(VillagerDebugData(uuid, lines)))
         }
+    }
+}
+
+data class ClientSyncModelPacket(
+    val useAlternativeModel: Boolean,
+) : CustomPayload {
+    override fun getId(): CustomPayload.Id<out CustomPayload> = ID
+
+    companion object {
+        val ID = CustomPayload.Id<ClientSyncModelPacket>(Identifier.of(MODID, "client_sync"))
+
+        val CODEC: PacketCodec<RegistryByteBuf, ClientSyncModelPacket> =
+            PacketCodec.of(
+                ClientSyncModelPacket::encode,
+                ClientSyncModelPacket::decode,
+            )
+
+        private fun encode(
+            packet: ClientSyncModelPacket,
+            buf: RegistryByteBuf,
+        ) {
+            buf.writeBoolean(packet.useAlternativeModel)
+        }
+
+        private fun decode(buf: RegistryByteBuf): ClientSyncModelPacket = ClientSyncModelPacket(buf.readBoolean())
     }
 }

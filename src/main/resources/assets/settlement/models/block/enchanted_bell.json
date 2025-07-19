@@ -1,0 +1,20 @@
+{
+  "textures": {
+    "particle": "minecraft:block/gold_block",
+    "all": "minecraft:block/gold_block"
+  },
+  "elements": [
+    {
+      "from": [ 4.5, 4.5, 4.5 ],
+      "to": [ 11.5, 11.5, 11.5 ],
+      "faces": {
+        "down":  { "uv": [ 4.5, 4.5, 11.5, 11.5 ], "texture": "#all", "cullface": "down" },
+        "up":    { "uv": [ 4.5, 4.5, 11.5, 11.5 ], "texture": "#all", "cullface": "up" },
+        "north": { "uv": [ 4.5, 4.5, 11.5, 11.5 ], "texture": "#all", "cullface": "north" },
+        "south": { "uv": [ 4.5, 4.5, 11.5, 11.5 ], "texture": "#all", "cullface": "south" },
+        "west":  { "uv": [ 4.5, 4.5, 11.5, 11.5 ], "texture": "#all", "cullface": "west" },
+        "east":  { "uv": [ 4.5, 4.5, 11.5, 11.5 ], "texture": "#all", "cullface": "east" }
+      }
+    }
+  ]
+}

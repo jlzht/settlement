@@ -4,7 +4,7 @@ import com.mojang.serialization.MapCodec
 import com.settlement.mod.block.entity.EnchantedBellBlockEntity
 import com.settlement.mod.item.HandBellItem
 import com.settlement.mod.item.ModItems
-import com.settlement.mod.world.SettlementManager
+import com.settlement.mod.world.SettlementAccessor
 import net.minecraft.block.AbstractBlock
 import net.minecraft.block.Block
 import net.minecraft.block.BlockState
@@ -36,9 +36,9 @@ class EnchantedBellBlock(
         if (!world.isClient && player is ServerPlayerEntity) {
             val itemStack = player.getMainHandStack()
             if (itemStack.isOf(ModItems.HAND_BELL)) {
-                SettlementManager.getInstance().getSettlements().forEach { s ->
-                    if (s.pos.equals(hit.getBlockPos())) {
-                        (itemStack.getItem() as HandBellItem).ringAt(player, itemStack, s.pos)
+                SettlementAccessor.findNearestSettlementRef(world, pos)?.let { ref ->
+                    if (ref.pos.equals(hit.getBlockPos())) {
+                        (itemStack.getItem() as HandBellItem).ringAt(player, itemStack, ref.pos)
                     }
                 }
             }
@@ -59,11 +59,7 @@ class EnchantedBellBlock(
         world: BlockView,
         pos: BlockPos,
         context: ShapeContext,
-    ): VoxelShape =
-        VoxelShapes.union(
-            Block.createColumnShape(6.0, 6.0, 13.0),
-            Block.createColumnShape(8.0, 4.0, 6.0),
-        )
+    ): VoxelShape = Block.createCubeShape(7.0)
 
     override fun getOutlineShape(
         state: BlockState,
@@ -71,8 +67,5 @@ class EnchantedBellBlock(
         pos: BlockPos,
         context: ShapeContext,
     ): VoxelShape =
-        VoxelShapes.union(
-            Block.createColumnShape(6.0, 6.0, 13.0),
-            Block.createColumnShape(8.0, 4.0, 6.0),
-        )
+        Block.createCubeShape(7.0)
 }
